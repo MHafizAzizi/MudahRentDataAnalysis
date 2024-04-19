@@ -5,6 +5,8 @@ The scraping is based on this machine learning project by Aditya Arie Wijaya
 
 https://adtarie.net/posts/005-webscraping-machinelearning-rent-pricing/
 
-Rental Scrape.ipynb shows the coding process of the scraping, its essentially the same as Aditya's coding with some slight modification.
+Mudah Scraping Rental Property.ipynb shows the coding process of the scraping, its essentially the same as Aditya's coding with some slight modification.
 
-If youre looking into combining the states.csv file into one file automatically, combine csv excel files.ipynb will show you how to do that
+all_states_rent.csv contains all of the states rental property data into a single file, if you want to see each states separately see the States file.
+
+This is just a part 1 of the scraping, part 2 will cover more property details such as furnished or not, building details, facilities provided
