@@ -124,5 +124,5 @@ date = pd.Timestamp.now().strftime("%Y%m%d%H%M%S")
 
 # Execute the scraping process with user inputs
 df = property_detail(state, start_page, end_page, sleep_time)
-df.to_csv(f'C:/Users/User/Downloads/Jupyter File/Mudah Scrape/Combined/{state}_{start_page}_to_{end_page}_pageScrape{date}.csv', index=False)
+df.to_csv(f'C:/{state}_{start_page}_to_{end_page}_pageScrape{date}.csv', index=False) #put your filepath here
 print("Data has been successfully scraped and saved to CSV file.") 
