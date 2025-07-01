@@ -1,0 +1,9 @@
+cloudscraper
+pandas
+beautifulsoup4
+tqdm
+requests
+geopy
+numpy
+streamlit
+plotly
