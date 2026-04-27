@@ -1,3 +1,10 @@
+import sys
+from pathlib import Path
+
+# Add project root to path for config import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import config
+
 import cloudscraper
 import pandas as pd
 from bs4 import BeautifulSoup
@@ -12,43 +19,19 @@ from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 from datetime import datetime, timedelta
 
-# --- Configuration ---
-BASE_URL = 'https://www.mudah.my'
-
-# Cloudscraper setup
+# Initialize scraper from config
 SCRAPER = cloudscraper.create_scraper(
     browser={
-        'browser': 'firefox',
-        'platform': 'windows',
-        'mobile': False
+        'browser': config.SCRAPER_CONFIG['browser'],
+        'platform': config.SCRAPER_CONFIG['platform'],
+        'mobile': config.SCRAPER_CONFIG['mobile']
     },
-    delay=10  # General delay for the scraper session
+    delay=config.SCRAPER_CONFIG['delay']
 )
 
-# Property attributes to extract
-PROPERTY_ATTRIBUTES = {
-    # 'name',
-    # 'phone',
-    'body',
-    'address',
-    'category_id',
-    'monthly_rent',
-    'property_type',
-    'state',
-    'region',
-    'rooms',
-    'bathroom',
-    'size',
-    'furnished',
-    'facilities',
-    'additional_facilities',
-    'latitude',
-    'longitude',
-    'publishedDatetime',
-    'scrape_date',
-    'ads_id',
-    # 'adviewUrl'
-}
+# Use config attributes
+PROPERTY_ATTRIBUTES = config.PROPERTY_ATTRIBUTES
+BASE_URL = config.BASE_URL
 
 def generate_page_urls(state: str, start: int, end: int) -> List[str]:
     """Generate a list of URLs for the given state and page range."""
@@ -62,19 +45,24 @@ def generate_page_urls(state: str, start: int, end: int) -> List[str]:
     end = max(start, end)
     return [f'{base_search_url}{i}' for i in range(start, end + 1)]
 
-def collect_property_links(url: str, min_delay: float = 3, max_delay: float = 7) -> List[str]:
+def collect_property_links(url: str, min_delay: float = None, max_delay: float = None) -> List[str]:
     """
     Collect property links from a given page URL using the <a> tag method,
     with randomized delays.
 
     Args:
         url (str): The URL of the search results page to scrape.
-        min_delay (float): Minimum delay in seconds before the request (default: 3).
-        max_delay (float): Maximum delay in seconds before the request (default: 7).
+        min_delay (float): Minimum delay in seconds before the request (default from config).
+        max_delay (float): Maximum delay in seconds before the request (default from config).
 
     Returns:
         List[str]: List of unique collected property URLs found on the page.
     """
+    if min_delay is None:
+        min_delay = config.MIN_DELAY
+    if max_delay is None:
+        max_delay = config.MAX_DELAY
+
     print(f"Attempting to collect links from: {url}")
     listing_urls: Set[str] = set()  # Use a set internally to handle duplicates easily
 
@@ -157,7 +145,7 @@ def extract_property_details(url: str, prop_id_no: str, details: Dict) -> List[D
 
 def get_lat_lon(address: str) -> Tuple[Optional[float], Optional[float]]:
     """Get latitude and longitude for a given address."""
-    geolocator = Nominatim(user_agent="my_agent")
+    geolocator = Nominatim(user_agent=config.GEOLOCATOR_USER_AGENT, timeout=config.GEOLOCATION_TIMEOUT)
     try:
         location = geolocator.geocode(address)
         return (location.latitude, location.longitude) if location else (None, None)
@@ -180,8 +168,11 @@ def parse_datetime(datetime_str: str) -> str:
     time_part = datetime_str.split(" ")[1]
     return f"{date.strftime('%Y-%m-%d')} {time_part}"
 
-def scrape_property_details(state: str, start_page: int, end_page: int, sleep_time: int) -> pd.DataFrame:
+def scrape_property_details(state: str, start_page: int, end_page: int, sleep_time: int = None) -> pd.DataFrame:
     """Scrape property details for the given state and page range."""
+    if sleep_time is None:
+        sleep_time = config.BASE_SLEEP_TIME
+
     property_data = []
     links = get_property_links(state, start_page, end_page)
 
@@ -216,9 +207,9 @@ def scrape_property_details(state: str, start_page: int, end_page: int, sleep_ti
                 
             prop_unit = extract_property_details(url, prop_id_no, details)
             
-            # Check if the category_id is not 'Commercial Property, For rent' or 'Land, For rent'
+            # Check if the category_id is not in excluded categories
             category_id = next((item['value'] for item in prop_unit if item['id'] == 'category_id'), None)
-            if category_id not in ['Commercial Property, For rent', 'Land, For rent', 'Room, For rent']:
+            if category_id not in config.EXCLUDED_CATEGORIES:
                 address = next((item['value'] for item in prop_unit if item['id'] == 'address'), None)
                 lat, lon = get_lat_lon(address) if address else (None, None)
                 prop_unit.extend([
@@ -235,17 +226,26 @@ def scrape_property_details(state: str, start_page: int, end_page: int, sleep_ti
     return pd.DataFrame(property_data)
 
 def main():
-    state = input("Enter the state you want to scrape: ")
+    state = input("Enter the state you want to scrape (or leave blank for Malaysia-wide): ")
     start_page = int(input("Enter the starting page number: "))
     end_page = int(input("Enter the ending page number: "))
-    sleep_time = int(input("Enter the sleep time between requests (in seconds): "))
+    sleep_time_input = input("Enter the sleep time between requests in seconds (leave blank for default): ")
+    sleep_time = int(sleep_time_input) if sleep_time_input else None
 
     df = scrape_property_details(state, start_page, end_page, sleep_time)
-    
+
     date = datetime.now().strftime("%Y%m%d%H%M%S")
-    filename = f'D:/3. Data Analysis Project/Mudah Website/Mudah Rental Properties/Scraped Data/Scraped_Data_Page{start_page}to{end_page}({date})({state}).csv'
-    df.to_csv(filename, index=False)
-    print(f"Data has been successfully scraped and saved to {filename}")
+    filename_template = config.SCRAPED_DATA_FILENAME_TEMPLATE
+    filename_only = filename_template.format(
+        start=start_page,
+        end=end_page,
+        timestamp=date,
+        state=state or "malaysia"
+    )
+    output_path = config.RAW_DATA_DIR / filename_only
+
+    df.to_csv(output_path, index=False)
+    print(f"Data has been successfully scraped and saved to {output_path}")
 
 if __name__ == "__main__":
     main()

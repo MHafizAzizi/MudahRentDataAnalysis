@@ -1,17 +1,23 @@
+import sys
+from pathlib import Path
+
+# Add project root to path for config import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import config
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 
 
-st.set_page_config(layout="wide") # Set page config to always wide layout
+st.set_page_config(layout="wide")
 st.title("Mudah Rental Analysis")
-st.write("This is an reporting dashboard of rental properties scrape from Mudah Website, the data will be updated when I like it :P")
-# st.write("another test")
-# st.write("Data Table of Available Rental Properties")
+st.write("Reporting dashboard of rental properties scraped from Mudah Website. Data updates periodically.")
 
 
+@st.cache_data
 def clean_data():
-    df = pd.read_csv("MasterFile.csv")
+    df = pd.read_csv(config.MASTER_FILE)
     df['state'] = df['state'].fillna('Not Specified').str.strip().str.title()
     df['CPI'] = df['CPI'].fillna('Not Specified').str.strip()
     df['furnished'] = df['furnished'].fillna('Not Specified').str.strip()

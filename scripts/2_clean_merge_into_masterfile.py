@@ -1,7 +1,14 @@
-import pandas as pd # for data manipulation
-import numpy as np # for numerical operations
-import os # to handle file paths
-import shutil # to move files
+import sys
+from pathlib import Path
+
+# Add project root to path for config import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import config
+
+import pandas as pd  # for data manipulation
+import numpy as np  # for numerical operations
+import os  # to handle file paths
+import shutil  # to move files
 
 def clean_rental_data(df):
     """
@@ -171,12 +178,12 @@ def process_rental_data(source_folder, csv_folder, final_folder, master_file, ma
         raise
 
 if __name__ == "__main__":
-    # Configuration
-    source_folder = 'D:/3. Data Analysis Project/Mudah Website/Mudah Rental Properties/Scraped Data'
-    csv_folder = 'D:/3. Data Analysis Project/Mudah Website/Mudah Rental Properties/Scraped Data/csv'
-    final_folder = 'D:/3. Data Analysis Project/Mudah Website/Mudah Rental Properties'
-    master_file = 'MasterFile.csv'
-    mapping_file = 'D:/3. Data Analysis Project/Mudah Website/Mudah Rental Properties/Table.csv'
-    
+    # Use configuration from config.py
+    source_folder = str(config.RAW_DATA_DIR)
+    csv_folder = str(config.PROCESSED_DATA_DIR)
+    final_folder = str(config.DATA_DIR)
+    master_file = "MasterFile.csv"
+    mapping_file = str(config.MAPPING_FILE)
+
     # Run the processing
     process_rental_data(source_folder, csv_folder, final_folder, master_file, mapping_file)
