@@ -9,12 +9,17 @@ PROJECT_ROOT = Path(__file__).parent
 DATA_DIR = PROJECT_ROOT / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
-MASTER_FILE = DATA_DIR / "MasterFile.csv"
+ARCHIVED_DATA_DIR = DATA_DIR / "archived"
 MAPPING_FILE = PROJECT_ROOT / "data" / "mapping.csv"  # Adjust if mapping file location differs
+
+# SQLite database
+DB_FILE = DATA_DIR / "mudah_rent.db"
+DB_TABLE = "properties"
 
 # Ensure directories exist
 RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
 PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+ARCHIVED_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Web Scraping Configuration ---
 BASE_URL = "https://www.mudah.my"
