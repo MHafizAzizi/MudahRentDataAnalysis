@@ -1,28 +1,114 @@
 # MudahRentDataAnalysis
 
-## 📄 Overview
-This is a project of getting rental properties data from Mudah.my
+## Overview
+Scrapes rental property listings from Mudah.my, cleans the data, stores it in a SQLite database, and visualizes it via a Streamlit dashboard.
 
-## 📁 Folder Structure
-- `data/` – Contains raw and processed datasets. MasterFile.csv contains the cleaned and merged data from the raw datasets
-- `scripts/` – Python scripts for data cleaning and scraping.
+Based on the web scraping approach by [Aditya Arie Wijaya](https://adtarie.net/posts/005-webscraping-machinelearning-rent-pricing/).
 
-    - `1_webscrape.py` is the Python script for scraping data from the website
-    - `2_clean_merge_into_masterfile.py` is the cleaning script and merging the processed dataset into the MasterFile.csv
-- `app/` – Streamlit web application. WIP
+---
 
-## 🚀 Getting Started
+## Folder Structure
 
-1. Setup Virtual Environment - `python -m venv venv`
-2. Activate Virtual Environment - `source venv/bin/activate`
-3. Install the necessary dependencies - `pip install -r requirements.txt`
+```
+MudahRentDataAnalysis/
+├── config.py               # All paths, parameters, and settings
+├── requirements.txt
+│
+├── scripts/
+│   ├── 1_webscrape.py      # Scrape listings from Mudah.my → data/raw/
+│   ├── 2_clean.py          # Clean raw CSVs → data/processed/
+│   └── 3_load_to_db.py     # Upsert processed CSVs into SQLite → data/mudah_rent.db
+│
+├── app/
+│   └── Streamlit.py        # Dashboard (reads from SQLite)
+│
+└── data/
+    ├── raw/                # Scraped CSV/JSON files (source of truth)
+    ├── processed/          # Cleaned CSVs (staging for DB load)
+    ├── archived/           # Processed CSVs after DB load
+    ├── old/raw/            # Raw CSVs after DB load
+    ├── mapping.csv         # Property type standardization mapping
+    └── mudah_rent.db       # SQLite database
+```
 
-## 📦 Dependencies
-- `requirements.txt` contains the necessary dependencies for the scripts to work
+---
 
-The script code is based on this machine learning project by Aditya Arie Wijaya 
+## Pipeline
 
-https://adtarie.net/posts/005-webscraping-machinelearning-rent-pricing/
+```
+1_webscrape.py   →   data/raw/*.csv
+2_clean.py       →   data/processed/*.csv
+3_load_to_db.py  →   data/mudah_rent.db  (upsert on ads_id)
+Streamlit.py     →   reads from SQLite
+```
 
+After `3_load_to_db.py` runs:
+- `data/processed/file.csv` → `data/archived/`
+- `data/raw/file.csv` → `data/old/raw/`
 
+---
 
+## Getting Started
+
+### 1. Setup environment
+
+```bash
+python -m venv venv
+
+# Windows
+venv\Scripts\activate
+
+# macOS / Linux
+source venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+### 2. Configure paths
+
+All settings are in `config.py`. Paths are relative to the project root — no manual edits needed for standard setup.
+
+If your `mapping.csv` is in a different location, update `MAPPING_FILE` in `config.py`.
+
+### 3. Run the pipeline
+
+```bash
+# Step 1 — Scrape listings
+python scripts/1_webscrape.py
+# Prompts: state, start page, end page, sleep time, output format (csv/json)
+
+# Step 2 — Clean raw data
+python scripts/2_clean.py
+
+# Step 3 — Load into SQLite
+python scripts/3_load_to_db.py
+
+# Step 4 — Launch dashboard
+streamlit run app/Streamlit.py
+```
+
+---
+
+## Configuration (`config.py`)
+
+| Setting | Default | Description |
+|---|---|---|
+| `RAW_DATA_DIR` | `data/raw/` | Scraped output location |
+| `PROCESSED_DATA_DIR` | `data/processed/` | Cleaned output location |
+| `DB_FILE` | `data/mudah_rent.db` | SQLite database path |
+| `MIN_DELAY` / `MAX_DELAY` | `3` / `7` s | Random delay between page requests |
+| `BASE_SLEEP_TIME` | `2` s | Base delay between property requests |
+| `EXCLUDED_CATEGORIES` | Commercial, Land, Room | Property types skipped during scrape |
+
+---
+
+## Dependencies
+
+See `requirements.txt`. Key packages:
+
+- `cloudscraper` — Cloudflare bypass for scraping
+- `beautifulsoup4` — HTML parsing
+- `pandas` / `numpy` — Data processing
+- `geopy` — Address geocoding
+- `streamlit` — Dashboard
+- `plotly` — Charts
