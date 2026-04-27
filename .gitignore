@@ -28,8 +28,11 @@ build/
 Thumbs.db
 
 # Data
-data/raw/*.csv
-data/processed/*.csv
+data/raw/
+data/processed/
+data/archived/
+data/old/
+data/*.db
 
 # Logs
 *.log
