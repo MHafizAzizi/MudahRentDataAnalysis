@@ -87,7 +87,12 @@ def load_processed_files():
             conn.commit()
 
             shutil.move(str(csv_path), str(config.ARCHIVED_DATA_DIR / csv_path.name))
-            print(f"Loaded {count} rows from {csv_path.name} → archived.")
+
+            raw_file = config.RAW_DATA_DIR / csv_path.name
+            if raw_file.exists():
+                shutil.move(str(raw_file), str(config.OLD_RAW_DIR / csv_path.name))
+
+            print(f"Loaded {count} rows from {csv_path.name} → archived. Raw → old/raw.")
             total_upserted += count
 
         except Exception as e:
