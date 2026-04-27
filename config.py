@@ -9,7 +9,6 @@ PROJECT_ROOT = Path(__file__).parent
 DATA_DIR = PROJECT_ROOT / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
-PROCESSED_DATA_DIR = DATA_DIR / "processed"
 ARCHIVED_DATA_DIR = DATA_DIR / "archived"
 OLD_RAW_DIR = DATA_DIR / "old" / "raw"
 MAPPING_FILE = PROJECT_ROOT / "data" / "mapping.csv"  # Adjust if mapping file location differs
@@ -60,6 +59,7 @@ PROPERTY_ATTRIBUTES = {
     "publishedDatetime",
     "scrape_date",
     "ads_id",
+    "adviewUrl",
 }
 
 # Property categories to exclude from scraping

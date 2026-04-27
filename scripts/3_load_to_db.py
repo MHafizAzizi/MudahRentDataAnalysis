@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS {config.DB_TABLE} (
     latitude              REAL,
     longitude             REAL,
     publishedDatetime     TEXT,
-    scrape_date           TEXT
+    scrape_date           TEXT,
+    adviewUrl             TEXT
 );
 """
 
@@ -46,7 +47,7 @@ def upsert_dataframe(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
         'ads_id', 'monthly_rent', 'property_type', 'category_id', 'CPI',
         'state', 'region', 'rooms', 'bathroom', 'size', 'furnished',
         'facilities', 'additional_facilities', 'body', 'address',
-        'latitude', 'longitude', 'publishedDatetime', 'scrape_date'
+        'latitude', 'longitude', 'publishedDatetime', 'scrape_date', 'adviewUrl'
     ]
     for col in db_cols:
         if col not in df.columns:
