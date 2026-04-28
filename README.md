@@ -19,6 +19,7 @@ MudahRentDataAnalysis/
 │   ├── 1_webscrape.py      # Scrape listings from Mudah.my → data/raw/
 │   ├── 2_clean.py          # Clean raw CSVs → data/processed/
 │   ├── 3_load_to_db.py     # Upsert processed CSVs into SQLite → data/mudah_rent.db
+│   ├── backfill_geocode.py # Backfill missing lat/lon in DB via region+state fallback
 │   └── logger.py           # Shared logging utility (console + file)
 │
 ├── app/
@@ -125,6 +126,20 @@ Dashboard includes:
 pytest tests/
 ```
 
+### 5. Backfill missing lat/lon (optional)
+
+When listings have empty `address` or addresses Nominatim can't resolve, lat/lon may be NULL in the DB. Run the backfill to fill these using region+state fallback:
+
+```bash
+python scripts/backfill_geocode.py
+```
+
+- Groups null rows by `(region, state)` — one geocode call fills many rows
+- Uses same fallback chain as the scraper: cleaned address → region+state → state
+- Coords are region-centroid level (good for heatmaps, not street-level)
+- Reuses `data/geocache.json` so reruns are fast
+- Always backup the DB before running: `cp data/mudah_rent.db data/mudah_rent.db.bak`
+
 ---
 
 ## Configuration (`config.py`)
@@ -150,7 +165,7 @@ See `requirements.txt` for pinned versions. Key packages:
 - `cloudscraper` — Cloudflare bypass for scraping
 - `beautifulsoup4` — HTML parsing
 - `pandas` / `numpy` — Data processing
-- `geopy` — Address geocoding (cached to `data/geocache.json`)
+- `geopy` — Address geocoding via Nominatim, with `RateLimiter` (1 req/sec) and fallback chain (full address → region+state → state). Cached to `data/geocache.json`
 - `streamlit` — Dashboard
 - `plotly` — Charts and interactive map
 - `pytest` — Test runner
