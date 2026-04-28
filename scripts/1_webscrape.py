@@ -184,12 +184,8 @@ def parse_datetime(datetime_str: str) -> str:
     time_part = datetime_str.split(" ")[1]
     return f"{date.strftime('%Y-%m-%d')} {time_part}"
 
-def scrape_property_details(state: str, start_page: int, end_page: int, sleep_time: int = None, all_fields: bool = False) -> pd.DataFrame:
-    """Scrape property details for the given state and page range.
-
-    all_fields=True returns every extracted field unfiltered (for inspection).
-    all_fields=False (default) returns only PROPERTY_ATTRIBUTES fields.
-    """
+def scrape_property_details(state: str, start_page: int, end_page: int, sleep_time: int = None) -> pd.DataFrame:
+    """Scrape property details for the given state and page range."""
     if sleep_time is None:
         sleep_time = config.BASE_SLEEP_TIME
 
@@ -235,10 +231,7 @@ def scrape_property_details(state: str, start_page: int, end_page: int, sleep_ti
                     {'id': 'latitude', 'value': lat},
                     {'id': 'longitude', 'value': lon}
                 ])
-                if all_fields:
-                    property_data.append({item['id']: item['value'] for item in prop_unit})
-                else:
-                    property_data.append({item['id']: item['value'] for item in prop_unit if item['id'] in PROPERTY_ATTRIBUTES})
+                property_data.append({item['id']: item['value'] for item in prop_unit if item['id'] in PROPERTY_ATTRIBUTES})
             else:
                 logger.info(f"Skipping {category_id}")
 
@@ -254,25 +247,17 @@ def main():
     sleep_time_input = input("Enter the sleep time between requests in seconds (leave blank for default): ")
     sleep_time = int(sleep_time_input) if sleep_time_input else None
 
-    fmt = input("Save as (csv/json) [default: csv]: ").strip().lower() or "csv"
-
-    df = scrape_property_details(state, start_page, end_page, sleep_time, all_fields=(fmt == "json"))
+    df = scrape_property_details(state, start_page, end_page, sleep_time)
 
     date = datetime.now().strftime("%Y%m%d%H%M%S")
-    base_name = config.SCRAPED_DATA_FILENAME_TEMPLATE.format(
+    filename = config.SCRAPED_DATA_FILENAME_TEMPLATE.format(
         start=start_page,
         end=end_page,
         timestamp=date,
         state=state or "malaysia"
     )
-
-    if fmt == "json":
-        output_path = config.RAW_DATA_DIR / base_name.replace(".csv", ".json")
-        df.to_json(output_path, orient="records", indent=2, force_ascii=False)
-    else:
-        output_path = config.RAW_DATA_DIR / base_name
-        df.to_csv(output_path, index=False)
-
+    output_path = config.RAW_DATA_DIR / filename
+    df.to_csv(output_path, index=False)
     logger.info(f"Saved {len(df)} rows to {output_path}")
 
 if __name__ == "__main__":
