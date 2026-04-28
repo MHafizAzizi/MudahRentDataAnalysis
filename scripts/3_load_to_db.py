@@ -3,6 +3,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
+from scripts.logger import get_logger
+
+logger = get_logger("load_to_db")
 
 import sqlite3
 import pandas as pd
@@ -34,6 +37,13 @@ CREATE TABLE IF NOT EXISTS {config.DB_TABLE} (
 );
 """
 
+CREATE_INDEXES_SQL = [
+    f"CREATE INDEX IF NOT EXISTS idx_state ON {config.DB_TABLE}(state);",
+    f"CREATE INDEX IF NOT EXISTS idx_cpi ON {config.DB_TABLE}(CPI);",
+    f"CREATE INDEX IF NOT EXISTS idx_monthly_rent ON {config.DB_TABLE}(monthly_rent);",
+    f"CREATE INDEX IF NOT EXISTS idx_scrape_date ON {config.DB_TABLE}(scrape_date);",
+]
+
 
 def upsert_dataframe(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
     """Insert or replace rows by ads_id. Returns number of rows upserted."""
@@ -61,12 +71,14 @@ def upsert_dataframe(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
 def load_processed_files():
     processed_files = list(config.PROCESSED_DATA_DIR.glob('*.csv'))
     if not processed_files:
-        print("No processed CSV files found.")
+        logger.warning("No processed CSV files found.")
         return
 
     conn = sqlite3.connect(config.DB_FILE)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute(CREATE_TABLE_SQL)
+    for idx_sql in CREATE_INDEXES_SQL:
+        conn.execute(idx_sql)
 
     # Enable upsert via INSERT OR REPLACE by using temp table trick
     # Simpler: use pandas + DELETE existing then INSERT
@@ -93,17 +105,16 @@ def load_processed_files():
             if raw_file.exists():
                 shutil.move(str(raw_file), str(config.OLD_RAW_DIR / csv_path.name))
 
-            print(f"Loaded {count} rows from {csv_path.name} → archived. Raw → old/raw.")
+            logger.info(f"Loaded {count} rows from {csv_path.name} → archived. Raw → old/raw.")
             total_upserted += count
 
         except Exception as e:
             conn.rollback()
-            print(f"Error loading {csv_path.name}: {e}")
+            logger.error(f"Error loading {csv_path.name}: {e}")
             continue
 
     conn.close()
-    print(f"\nDone. Total rows upserted: {total_upserted}")
-    print(f"Database: {config.DB_FILE}")
+    logger.info(f"Done. Total rows upserted: {total_upserted}. DB: {config.DB_FILE}")
 
 
 if __name__ == "__main__":

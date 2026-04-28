@@ -3,6 +3,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
+from scripts.logger import get_logger
+
+logger = get_logger("clean")
 
 import pandas as pd
 import numpy as np
@@ -75,7 +78,7 @@ def clean_raw_files():
 
     raw_files = list(config.RAW_DATA_DIR.glob('*.csv'))
     if not raw_files:
-        print("No raw CSV files found.")
+        logger.warning("No raw CSV files found.")
         return
 
     for raw_path in raw_files:
@@ -90,10 +93,10 @@ def clean_raw_files():
 
             out_path = config.PROCESSED_DATA_DIR / raw_path.name
             cleaned_df.to_csv(out_path, index=False)
-            print(f"Cleaned: {raw_path.name} → {out_path}")
+            logger.info(f"Cleaned: {raw_path.name} → {out_path}")
 
         except Exception as e:
-            print(f"Error processing {raw_path.name}: {e}")
+            logger.error(f"Error processing {raw_path.name}: {e}")
             continue
 
 

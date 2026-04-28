@@ -114,6 +114,34 @@ with col2:
 
 
 st.markdown("---")
+st.subheader("Property Map", divider="rainbow")
+map_df = df.dropna(subset=['latitude', 'longitude'])
+if map_df.empty:
+    st.info("No geocoded properties available. Run scraper to collect lat/lon data.")
+else:
+    fig_map = px.scatter_map(
+        map_df,
+        lat='latitude',
+        lon='longitude',
+        color='CPI',
+        hover_data={
+            'ads_id': True,
+            'monthly_rent': True,
+            'state': True,
+            'property_type': True,
+            'furnished': True,
+            'latitude': False,
+            'longitude': False,
+        },
+        labels={'monthly_rent': 'Monthly Rent (RM)', 'CPI': 'Property Type'},
+        zoom=6,
+        center={"lat": 4.2105, "lon": 101.9758},  # Malaysia center
+        map_style='open-street-map',
+        height=600
+    )
+    st.plotly_chart(fig_map, use_container_width=True)
+
+st.markdown("---")
 st.subheader("Property Table")
 st.dataframe(df, hide_index=True)
 st.markdown("---")
