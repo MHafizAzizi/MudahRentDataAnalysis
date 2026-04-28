@@ -234,7 +234,6 @@ def scrape_property_details(state: str, start_page: int, end_page: int, sleep_ti
                 property_data.append({item['id']: item['value'] for item in prop_unit if item['id'] in PROPERTY_ATTRIBUTES})
             else:
                 logger.info(f"Skipping {category_id}")
-
         except Exception as e:
             logger.error(f"Error scraping {url}: {e}")
 

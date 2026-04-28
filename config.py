@@ -65,8 +65,7 @@ PROPERTY_ATTRIBUTES = {
 # Property categories to exclude from scraping
 EXCLUDED_CATEGORIES = {
     "Commercial Property, For rent",
-    "Land, For rent",
-    "Room, For rent"
+    "Land, For rent"
 }
 
 # --- Geolocation Configuration ---

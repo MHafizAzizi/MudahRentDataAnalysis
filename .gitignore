@@ -33,6 +33,7 @@ data/processed/
 data/archived/
 data/old/
 data/*.db
+data/geocache.json
 
 # Logs
 *.log
