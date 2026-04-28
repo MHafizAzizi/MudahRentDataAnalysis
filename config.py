@@ -72,6 +72,12 @@ EXCLUDED_CATEGORIES = {
 # --- Geolocation Configuration ---
 GEOLOCATOR_USER_AGENT = "mudah_rent_analysis/1.0"
 GEOLOCATION_TIMEOUT = 5  # seconds
+GEO_CACHE_FILE = DATA_DIR / "geocache.json"
+
+# --- Logging Configuration ---
+LOG_DIR = PROJECT_ROOT / "logs"
+LOG_FILE = LOG_DIR / "pipeline.log"
+LOG_DIR.mkdir(exist_ok=True)
 
 # --- Data Cleaning Configuration ---
 # Output filename format for scraped data

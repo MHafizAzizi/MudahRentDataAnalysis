@@ -1,9 +1,12 @@
-cloudscraper
-pandas
-beautifulsoup4
-tqdm
-requests
-geopy
-numpy
-streamlit
-plotly
+cloudscraper==1.2.71
+pandas==2.3.2
+beautifulsoup4==4.12.3
+tqdm==4.67.3
+requests==2.32.3
+geopy==2.4.1
+numpy==2.3.2
+streamlit==1.56.0
+plotly==6.6.0
+
+# Dev dependencies
+pytest>=7.0

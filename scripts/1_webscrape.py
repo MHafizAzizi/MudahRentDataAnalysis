@@ -4,6 +4,9 @@ from pathlib import Path
 # Add project root to path for config import
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
+from scripts.logger import get_logger
+
+logger = get_logger("webscrape")
 
 import cloudscraper
 import pandas as pd
@@ -18,6 +21,23 @@ from typing import List, Dict, Tuple, Optional, Set
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 from datetime import datetime, timedelta
+
+_GEOLOCATOR = Nominatim(
+    user_agent=config.GEOLOCATOR_USER_AGENT,
+    timeout=config.GEOLOCATION_TIMEOUT
+)
+
+
+def _load_geocache() -> dict:
+    if config.GEO_CACHE_FILE.exists():
+        with open(config.GEO_CACHE_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def _save_geocache(cache: dict) -> None:
+    with open(config.GEO_CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
 
 # Initialize scraper from config
 SCRAPER = cloudscraper.create_scraper(
@@ -63,52 +83,38 @@ def collect_property_links(url: str, min_delay: float = None, max_delay: float =
     if max_delay is None:
         max_delay = config.MAX_DELAY
 
-    print(f"Attempting to collect links from: {url}")
-    listing_urls: Set[str] = set()  # Use a set internally to handle duplicates easily
+    logger.info(f"Collecting links from: {url}")
+    listing_urls: Set[str] = set()
 
     try:
-        # Random delay before making the request
         delay = random.uniform(min_delay, max_delay)
-        print(f"Waiting for {delay:.2f} seconds before request...")
+        logger.debug(f"Waiting {delay:.2f}s before request...")
         time.sleep(delay)
 
         response = SCRAPER.get(url)
-        response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
-        print(f"Successfully fetched {url} (Status: {response.status_code})")
+        response.raise_for_status()
+        logger.info(f"Fetched {url} (Status: {response.status_code})")
 
-        # Create a BeautifulSoup object
         soup = BeautifulSoup(response.text, 'html.parser')
+        potential_links = soup.find_all('a', attrs={'data-listid': True, 'href': True})
+        logger.debug(f"Found {len(potential_links)} potential links with data-listid.")
 
-        # Find all <a> tags that have a 'data-listid' attribute AND an 'href'
-        potential_links = soup.find_all(
-            'a',
-            attrs={
-                'data-listid': True,  # Check if the attribute exists
-                'href': True          # Check if the attribute exists
-            }
-        )
-        print(f"Found {len(potential_links)} potential links with data-listid.")
-
-        # Filter these links to get only the valid listing URLs
         count = 0
         for link in potential_links:
             href = link.get('href')
-            # Check if it's a valid URL starting with the base and looks like a listing page
             if href and href.startswith(BASE_URL) and '.htm' in href:
-                # Add the URL to the set (duplicates are ignored automatically)
                 if href not in listing_urls:
                     listing_urls.add(href)
                     count += 1
 
-        print(f"Added {count} new unique listing URLs from this page.")
+        logger.info(f"Added {count} unique listing URLs from this page.")
 
     except cloudscraper.exceptions.CloudflareChallengeError as e:
-        print(f"Cloudflare challenge encountered for {url}: {str(e)}")
-    except requests.exceptions.RequestException as e:  # Catch requests library errors
-        print(f"Network error collecting links from {url}: {str(e)}")
+        logger.error(f"Cloudflare challenge for {url}: {e}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error for {url}: {e}")
     except Exception as e:
-        # Catch other potential errors during parsing or processing
-        print(f"Error collecting links from {url}: {type(e).__name__} - {str(e)}")
+        logger.error(f"Error collecting links from {url}: {type(e).__name__} - {e}")
 
     # Convert the set to a list before returning
     return list(listing_urls)
@@ -143,15 +149,25 @@ def extract_property_details(url: str, prop_id_no: str, details: Dict) -> List[D
     
     return category_attr + building_details + other_attr
 
-def get_lat_lon(address: str) -> Tuple[Optional[float], Optional[float]]:
-    """Get latitude and longitude for a given address."""
-    geolocator = Nominatim(user_agent=config.GEOLOCATOR_USER_AGENT, timeout=config.GEOLOCATION_TIMEOUT)
-    try:
-        location = geolocator.geocode(address)
-        return (location.latitude, location.longitude) if location else (None, None)
-    except (GeocoderTimedOut, GeocoderServiceError):
-        time.sleep(2)  # Wait for 2 seconds before retrying
-        return get_lat_lon(address)
+def get_lat_lon(address: str, cache: dict, retries: int = 3) -> Tuple[Optional[float], Optional[float]]:
+    """Get latitude and longitude for a given address, with cache and retry limit."""
+    if address in cache:
+        return tuple(cache[address])
+
+    for attempt in range(retries):
+        try:
+            time.sleep(1)  # Respect Nominatim rate limit (1 req/sec)
+            location = _GEOLOCATOR.geocode(address)
+            result = (location.latitude, location.longitude) if location else (None, None)
+            if result != (None, None):
+                cache[address] = list(result)
+                _save_geocache(cache)
+            return result
+        except (GeocoderTimedOut, GeocoderServiceError):
+            if attempt < retries - 1:
+                time.sleep(2 * (attempt + 1))  # Exponential backoff
+            else:
+                return (None, None)
 
 def parse_datetime(datetime_str: str) -> str:
     """Parse datetime string and return a standardized format."""
@@ -177,6 +193,7 @@ def scrape_property_details(state: str, start_page: int, end_page: int, sleep_ti
     if sleep_time is None:
         sleep_time = config.BASE_SLEEP_TIME
 
+    geocache = _load_geocache()
     property_data = []
     links = get_property_links(state, start_page, end_page)
 
@@ -191,21 +208,21 @@ def scrape_property_details(state: str, start_page: int, end_page: int, sleep_ti
             script = soup.find('script', id='__NEXT_DATA__') or soup.find('script', type='application/json')
 
             if not script:
-                print(f"Script not found for URL: {url}")
+                logger.warning(f"Script tag not found for URL: {url}")
                 continue
 
             data = json.loads(script.text)
             prop_id_match = re.search(r'-(\d+)\.htm', url)
 
             if not prop_id_match:
-                print(f"Could not extract property ID from URL: {url}")
+                logger.warning(f"Could not extract property ID from URL: {url}")
                 continue
 
             prop_id_no = prop_id_match.group(1)
             details = data.get('props', {}).get('initialState', {}).get('adDetails', {}).get('byID', {}).get(prop_id_no, {})
 
             if not details:
-                print(f"No details found for property ID: {prop_id_no} at URL: {url}")
+                logger.warning(f"No details found for property ID: {prop_id_no} at {url}")
                 continue
 
             prop_unit = extract_property_details(url, prop_id_no, details)
@@ -213,7 +230,7 @@ def scrape_property_details(state: str, start_page: int, end_page: int, sleep_ti
             category_id = next((item['value'] for item in prop_unit if item['id'] == 'category_id'), None)
             if category_id not in config.EXCLUDED_CATEGORIES:
                 address = next((item['value'] for item in prop_unit if item['id'] == 'address'), None)
-                lat, lon = get_lat_lon(address) if address else (None, None)
+                lat, lon = get_lat_lon(address, geocache) if address else (None, None)
                 prop_unit.extend([
                     {'id': 'latitude', 'value': lat},
                     {'id': 'longitude', 'value': lon}
@@ -223,10 +240,10 @@ def scrape_property_details(state: str, start_page: int, end_page: int, sleep_ti
                 else:
                     property_data.append({item['id']: item['value'] for item in prop_unit if item['id'] in PROPERTY_ATTRIBUTES})
             else:
-                print(f"Skipping {category_id}")
+                logger.info(f"Skipping {category_id}")
 
         except Exception as e:
-            print(f"An error occurred for {url}, error: {e}")
+            logger.error(f"Error scraping {url}: {e}")
 
     return pd.DataFrame(property_data)
 
@@ -256,7 +273,7 @@ def main():
         output_path = config.RAW_DATA_DIR / base_name
         df.to_csv(output_path, index=False)
 
-    print(f"Data has been successfully scraped and saved to {output_path}")
+    logger.info(f"Saved {len(df)} rows to {output_path}")
 
 if __name__ == "__main__":
     main()
