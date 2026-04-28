@@ -19,6 +19,7 @@ import time
 import requests
 from typing import List, Dict, Tuple, Optional, Set
 from geopy.geocoders import Nominatim
+from geopy.extra.rate_limiter import RateLimiter
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 from datetime import datetime, timedelta
 
@@ -26,6 +27,27 @@ _GEOLOCATOR = Nominatim(
     user_agent=config.GEOLOCATOR_USER_AGENT,
     timeout=config.GEOLOCATION_TIMEOUT
 )
+
+_GEOCODE = RateLimiter(
+    _GEOLOCATOR.geocode,
+    min_delay_seconds=1,
+    max_retries=3,
+    error_wait_seconds=5,
+    swallow_exceptions=True,
+)
+
+
+def _clean_address(addr: str) -> str:
+    """Normalize Mudah address strings before geocoding."""
+    if not addr:
+        return ""
+    addr = re.sub(r'\b(bilik|room|unit|no\.?|lot)\s*[\w\-/]+', '', addr, flags=re.I)
+    addr = addr.replace('K.L.', 'Kuala Lumpur').replace('KL', 'Kuala Lumpur')
+    addr = addr.replace('P.J.', 'Petaling Jaya')
+    addr = re.sub(r'\s+', ' ', addr).strip(' ,')
+    if addr and 'malaysia' not in addr.lower():
+        addr += ', Malaysia'
+    return addr
 
 
 def _load_geocache() -> dict:
@@ -149,25 +171,55 @@ def extract_property_details(url: str, prop_id_no: str, details: Dict) -> List[D
     
     return category_attr + building_details + other_attr
 
-def get_lat_lon(address: str, cache: dict, retries: int = 3) -> Tuple[Optional[float], Optional[float]]:
-    """Get latitude and longitude for a given address, with cache and retry limit."""
-    if address in cache:
-        return tuple(cache[address])
+def _geocode_query(query: str, cache: dict) -> Tuple[Optional[float], Optional[float]]:
+    """Single geocode attempt with cache. Returns (None, None) on miss/fail."""
+    if not query:
+        return (None, None)
+    if query in cache:
+        return tuple(cache[query])
 
-    for attempt in range(retries):
-        try:
-            time.sleep(1)  # Respect Nominatim rate limit (1 req/sec)
-            location = _GEOLOCATOR.geocode(address)
-            result = (location.latitude, location.longitude) if location else (None, None)
-            if result != (None, None):
-                cache[address] = list(result)
-                _save_geocache(cache)
-            return result
-        except (GeocoderTimedOut, GeocoderServiceError):
-            if attempt < retries - 1:
-                time.sleep(2 * (attempt + 1))  # Exponential backoff
-            else:
-                return (None, None)
+    try:
+        location = _GEOCODE(query)
+    except (GeocoderTimedOut, GeocoderServiceError) as e:
+        logger.warning(f"Geocode error for '{query}': {e}")
+        return (None, None)
+
+    if not location:
+        cache[query] = [None, None]
+        _save_geocache(cache)
+        return (None, None)
+
+    result = (location.latitude, location.longitude)
+    cache[query] = list(result)
+    _save_geocache(cache)
+    return result
+
+
+def get_lat_lon(
+    address: str,
+    cache: dict,
+    region: Optional[str] = None,
+    state: Optional[str] = None,
+) -> Tuple[Optional[float], Optional[float]]:
+    """Geocode with fallback: full address → region+state → state."""
+    queries = []
+
+    cleaned = _clean_address(address)
+    if cleaned:
+        queries.append(cleaned)
+
+    if region and state:
+        queries.append(f"{region}, {state}, Malaysia")
+    if state:
+        queries.append(f"{state}, Malaysia")
+
+    for q in queries:
+        lat, lon = _geocode_query(q, cache)
+        if lat is not None:
+            return lat, lon
+
+    logger.warning(f"All geocode fallbacks failed for: {address!r} ({region}, {state})")
+    return (None, None)
 
 def parse_datetime(datetime_str: str) -> str:
     """Parse datetime string and return YYYY-MM-DD or YYYY-MM-DD HH:MM format."""
@@ -232,7 +284,9 @@ def scrape_property_details(state: str, start_page: int, end_page: int, sleep_ti
             category_id = next((item['value'] for item in prop_unit if item['id'] == 'category_id'), None)
             if category_id not in config.EXCLUDED_CATEGORIES:
                 address = next((item['value'] for item in prop_unit if item['id'] == 'address'), None)
-                lat, lon = get_lat_lon(address, geocache) if address else (None, None)
+                region = next((item['value'] for item in prop_unit if item['id'] == 'region'), None)
+                state = next((item['value'] for item in prop_unit if item['id'] == 'state'), None)
+                lat, lon = get_lat_lon(address, geocache, region, state)
                 prop_unit.extend([
                     {'id': 'latitude', 'value': lat},
                     {'id': 'longitude', 'value': lon}
