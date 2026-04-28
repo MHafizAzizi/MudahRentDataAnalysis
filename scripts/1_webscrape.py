@@ -170,19 +170,25 @@ def get_lat_lon(address: str, cache: dict, retries: int = 3) -> Tuple[Optional[f
                 return (None, None)
 
 def parse_datetime(datetime_str: str) -> str:
-    """Parse datetime string and return a standardized format."""
+    """Parse datetime string and return YYYY-MM-DD or YYYY-MM-DD HH:MM format."""
     if not datetime_str:
         return ""
-        
+
     if "Yesterday" in datetime_str:
         date = datetime.now() - timedelta(days=1)
-    elif "Today" in datetime_str:
-        date = datetime.now()
-    else:
-        return datetime_str  # Assuming it's already in the correct format
+        time_part = datetime_str.split(" ")[1]
+        return f"{date.strftime('%Y-%m-%d')} {time_part}"
 
-    time_part = datetime_str.split(" ")[1]
-    return f"{date.strftime('%Y-%m-%d')} {time_part}"
+    if "Today" in datetime_str:
+        date = datetime.now()
+        time_part = datetime_str.split(" ")[1]
+        return f"{date.strftime('%Y-%m-%d')} {time_part}"
+
+    # Mudah returns older dates as DD/MM/YYYY — convert to YYYY-MM-DD
+    try:
+        return datetime.strptime(datetime_str.strip(), "%d/%m/%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return datetime_str
 
 def scrape_property_details(state: str, start_page: int, end_page: int, sleep_time: int = None) -> pd.DataFrame:
     """Scrape property details for the given state and page range."""

@@ -47,7 +47,7 @@ def clean_rental_data(df: pd.DataFrame) -> pd.DataFrame:
 
     if 'publishedDatetime' in df.columns:
         df['publishedDatetime'] = pd.to_datetime(
-            df['publishedDatetime'], errors='coerce'
+            df['publishedDatetime'], errors='coerce', dayfirst=True
         ).dt.strftime(config.DATETIME_FORMAT).fillna('')
 
     return df
