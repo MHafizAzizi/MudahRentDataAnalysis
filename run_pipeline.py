@@ -7,9 +7,6 @@ Usage:
 
     # Skip scraping (clean + load only — reprocess existing raw files)
     python run_pipeline.py --skip-scrape
-
-    # With custom sleep time
-    python run_pipeline.py --state "" --start 1 --end 5 --sleep 3
 """
 
 import argparse
@@ -41,10 +38,10 @@ def step(label: str):
 
 def main():
     parser = argparse.ArgumentParser(description="Run Mudah Rent Analysis pipeline")
-    parser.add_argument("--state", default="", help="State to scrape (blank = Malaysia-wide)")
+    parser.add_argument("--state", required=False, default="selangor",
+                        help="State URL slug (e.g. 'selangor', 'kuala-lumpur'). See config.REGION_CODES.")
     parser.add_argument("--start", type=int, default=1, help="Start page number")
     parser.add_argument("--end", type=int, default=1, help="End page number")
-    parser.add_argument("--sleep", type=int, default=None, help="Sleep time between requests (seconds)")
     parser.add_argument("--skip-scrape", action="store_true", help="Skip scraping, run clean+load only")
     args = parser.parse_args()
 
@@ -55,11 +52,10 @@ def main():
         from datetime import datetime
         scraper = load_script(Path("1_webscrape.py"))
 
-        df = scraper.scrape_property_details(
+        df = scraper.scrape(
             state=args.state,
             start_page=args.start,
             end_page=args.end,
-            sleep_time=args.sleep
         )
 
         if df.empty:
@@ -71,7 +67,7 @@ def main():
             start=args.start,
             end=args.end,
             timestamp=timestamp,
-            state=args.state or "malaysia"
+            state=args.state
         )
         output_path = config.RAW_DATA_DIR / filename
         df.to_csv(output_path, index=False)
