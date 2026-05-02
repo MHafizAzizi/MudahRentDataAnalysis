@@ -1,31 +1,31 @@
 Mudah Property Type,Standardized Property Type
-Condominium,Sewa Condominium
-Service Residence,Sewa Condominium
-Apartment,Sewa Apartment
-Apartment / Flat,Sewa Apartment
-Flat,Sewa Apartment
-Studio,Sewa Apartment
-Duplex,Sewa Apartment
-Townhouse Condo,Sewa Condominium
-Condo / Services residence / Penthouse / Townhouse,Sewa Condominium
-2-storey Terraced House,Sewa Terraced House
-1-storey Terraced House,Sewa Terraced House
-3-storey Terraced House,Sewa Terraced House
-2.5-storey Terraced House,Sewa Terraced House
-1.5-storey Terraced House,Sewa Terraced House
-3.5-storey Terraced House,Sewa Terraced House
-Terraced House,Sewa Terraced House
-Semi-Detached House,Sewa Semi-Detached
-Bungalow House,Sewa Bungalow
-Link Bungalow,Sewa Bungalow
-Zero-Lot Bungalow,Sewa Bungalow
-Twin Courtyard Villa,Sewa Bungalow
-Twin Villas,Sewa Bungalow
-Townhouse,Sewa Townhouse
-Cluster House,Sewa Cluster House
-Houses,Sewa House
-Residential,Sewa House
-Shoplot,Sewa Shoplot
-Shop lot,Sewa Shoplot
-Sharing a house / Flat,Sewa Room
-Others,Sewa Other
+Condominium,Condominium
+Service Residence,Condominium
+Apartment,Apartment
+Apartment / Flat,Apartment
+Flat,Apartment
+Studio,Apartment
+Duplex,Apartment
+Townhouse Condo,Condominium
+Condo / Services residence / Penthouse / Townhouse,Condominium
+2-storey Terraced House,Terraced House
+1-storey Terraced House,Terraced House
+3-storey Terraced House,Terraced House
+2.5-storey Terraced House,Terraced House
+1.5-storey Terraced House,Terraced House
+3.5-storey Terraced House,Terraced House
+Terraced House,Terraced House
+Semi-Detached House,Semi-Detached
+Bungalow House,Bungalow
+Link Bungalow,Bungalow
+Zero-Lot Bungalow,Bungalow
+Twin Courtyard Villa,Bungalow
+Twin Villas,Bungalow
+Townhouse,Townhouse
+Cluster House,Cluster House
+Houses,House
+Residential,House
+Shoplot,Shoplot
+Shop lot,Shoplot
+Sharing a house / Flat,Room
+Others,Other
