@@ -39,3 +39,37 @@ def test_search_returns_data_list():
     result = mudah_api.search(region="8", offset=0)
     assert result["data"][0]["attributes"]["subject"] == "test"
     assert result["meta"]["total-results"] == 1
+
+
+@responses.activate
+def test_iter_listings_paginates_until_exhausted(monkeypatch):
+    monkeypatch.setattr("scripts.mudah_api.time.sleep", lambda _: None)
+    page1 = {
+        "data": [{"id": i, "attributes": {"list_id": i}} for i in range(24)],
+        "meta": {"total-results": 30, "total-showing": 24},
+    }
+    page2 = {
+        "data": [{"id": i, "attributes": {"list_id": i}} for i in range(24, 30)],
+        "meta": {"total-results": 30, "total-showing": 6},
+    }
+    responses.add(responses.GET, "https://search.mudah.my/v1/search", json=page1, status=200)
+    responses.add(responses.GET, "https://search.mudah.my/v1/search", json=page2, status=200)
+
+    items = list(mudah_api.iter_listings(region="8", max_pages=10))
+    assert len(items) == 30
+    assert items[0]["attributes"]["list_id"] == 0
+    assert items[29]["attributes"]["list_id"] == 29
+
+
+@responses.activate
+def test_iter_listings_respects_max_pages(monkeypatch):
+    monkeypatch.setattr("scripts.mudah_api.time.sleep", lambda _: None)
+    page = {
+        "data": [{"id": i, "attributes": {"list_id": i}} for i in range(24)],
+        "meta": {"total-results": 1000, "total-showing": 24},
+    }
+    responses.add(responses.GET, "https://search.mudah.my/v1/search", json=page, status=200)
+    responses.add(responses.GET, "https://search.mudah.my/v1/search", json=page, status=200)
+
+    items = list(mudah_api.iter_listings(region="8", max_pages=2))
+    assert len(items) == 48
