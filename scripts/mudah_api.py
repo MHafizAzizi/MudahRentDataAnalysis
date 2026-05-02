@@ -93,3 +93,19 @@ def to_csv_row(item: Dict) -> Dict[str, str]:
         "publishedDatetime": _join(a.get("published_date") or a.get("date")),
         "adviewUrl": _join(a.get("adview_url")),
     }
+
+
+def geocode_query(attributes: Dict) -> str:
+    """Build a clean comma-separated geocode query from API attributes.
+
+    Skips empty parts. Appends 'Malaysia' when at least one part exists.
+    """
+    parts = [
+        attributes.get("building_name") or "",
+        attributes.get("subarea_name") or "",
+        attributes.get("region_name") or "",
+    ]
+    parts = [p.strip() for p in parts if p and p.strip()]
+    if not parts:
+        return ""
+    return ", ".join(parts) + ", Malaysia"

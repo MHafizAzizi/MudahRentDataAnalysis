@@ -133,3 +133,17 @@ def test_to_csv_row_handles_missing_optional_fields():
     assert row["state"] == "Selangor"
     assert row["facilities"] == ""
     assert row["address"] == ", , Selangor"
+
+
+def test_geocode_query_skips_empty_parts():
+    a = {"building_name": "", "subarea_name": "Shah Alam", "region_name": "Selangor"}
+    assert mudah_api.geocode_query(a) == "Shah Alam, Selangor, Malaysia"
+
+
+def test_geocode_query_includes_building_when_present():
+    a = {"building_name": "Hill10 Residence", "subarea_name": "Shah Alam", "region_name": "Selangor"}
+    assert mudah_api.geocode_query(a) == "Hill10 Residence, Shah Alam, Selangor, Malaysia"
+
+
+def test_geocode_query_handles_all_empty():
+    assert mudah_api.geocode_query({}) == ""
