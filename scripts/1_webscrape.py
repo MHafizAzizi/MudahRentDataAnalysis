@@ -172,7 +172,7 @@ def extract_property_details(url: str, prop_id_no: str, details: Dict) -> List[D
     return category_attr + building_details + other_attr
 
 def _geocode_query(query: str, cache: dict) -> Tuple[Optional[float], Optional[float]]:
-    """Single geocode attempt with cache. Returns (None, None) on miss/fail."""
+    """Single geocode attempt with cache. Returns (None, None) on miss/fail. Does NOT save cache."""
     if not query:
         return (None, None)
     if query in cache:
@@ -186,12 +186,10 @@ def _geocode_query(query: str, cache: dict) -> Tuple[Optional[float], Optional[f
 
     if not location:
         cache[query] = [None, None]
-        _save_geocache(cache)
         return (None, None)
 
     result = (location.latitude, location.longitude)
     cache[query] = list(result)
-    _save_geocache(cache)
     return result
 
 
@@ -248,6 +246,7 @@ def scrape_property_details(state: str, start_page: int, end_page: int, sleep_ti
         sleep_time = config.BASE_SLEEP_TIME
 
     geocache = _load_geocache()
+    address_cache = {}  # Local cache to avoid re-cleaning addresses
     property_data = []
     links = get_property_links(state, start_page, end_page)
 
@@ -280,22 +279,31 @@ def scrape_property_details(state: str, start_page: int, end_page: int, sleep_ti
                 continue
 
             prop_unit = extract_property_details(url, prop_id_no, details)
+            prop_dict = {item['id']: item['value'] for item in prop_unit}
 
-            category_id = next((item['value'] for item in prop_unit if item['id'] == 'category_id'), None)
+            category_id = prop_dict.get('category_id')
             if category_id not in config.EXCLUDED_CATEGORIES:
-                address = next((item['value'] for item in prop_unit if item['id'] == 'address'), None)
-                region = next((item['value'] for item in prop_unit if item['id'] == 'region'), None)
-                state = next((item['value'] for item in prop_unit if item['id'] == 'state'), None)
-                lat, lon = get_lat_lon(address, geocache, region, state)
-                prop_unit.extend([
-                    {'id': 'latitude', 'value': lat},
-                    {'id': 'longitude', 'value': lon}
-                ])
-                property_data.append({item['id']: item['value'] for item in prop_unit if item['id'] in PROPERTY_ATTRIBUTES})
+                address = prop_dict.get('address')
+                region = prop_dict.get('region')
+                state = prop_dict.get('state')
+
+                # Check address_cache to avoid redundant cleaning
+                if address not in address_cache:
+                    address_cache[address] = _clean_address(address)
+
+                lat, lon = get_lat_lon(address_cache[address], geocache, region, state)
+                prop_dict['latitude'] = lat
+                prop_dict['longitude'] = lon
+                property_data.append({k: v for k, v in prop_dict.items() if k in PROPERTY_ATTRIBUTES})
             else:
                 logger.info(f"Skipping {category_id}")
         except Exception as e:
             logger.error(f"Error scraping {url}: {e}")
+
+    # Save geocache once at end instead of per-result
+    _save_geocache(geocache)
+    logger.info(f"Saved geocache with {len(geocache)} entries")
+    logger.info(f"Address cache had {len(address_cache)} unique addresses")
 
     return pd.DataFrame(property_data)
 

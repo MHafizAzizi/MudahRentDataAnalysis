@@ -64,7 +64,9 @@ def upsert_dataframe(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
             df[col] = None
     df = df[db_cols]
 
-    df.to_sql(config.DB_TABLE, conn, if_exists='append', index=False, method='multi')
+    # SQLite max 999 variables — chunksize = floor(999 / num_cols)
+    chunk_size = max(1, 999 // len(db_cols))
+    df.to_sql(config.DB_TABLE, conn, if_exists='append', index=False, method='multi', chunksize=chunk_size)
     return len(df)
 
 
@@ -90,11 +92,14 @@ def load_processed_files():
             ads_ids = df['ads_id'].dropna().astype(str).tolist()
 
             if ads_ids:
-                placeholders = ','.join('?' * len(ads_ids))
-                conn.execute(
-                    f"DELETE FROM {config.DB_TABLE} WHERE ads_id IN ({placeholders})",
-                    ads_ids
-                )
+                # Batch DELETE to stay under SQLite 999-variable limit
+                for i in range(0, len(ads_ids), 900):
+                    batch = ads_ids[i:i + 900]
+                    placeholders = ','.join('?' * len(batch))
+                    conn.execute(
+                        f"DELETE FROM {config.DB_TABLE} WHERE ads_id IN ({placeholders})",
+                        batch
+                    )
 
             count = upsert_dataframe(conn, df)
             conn.commit()
