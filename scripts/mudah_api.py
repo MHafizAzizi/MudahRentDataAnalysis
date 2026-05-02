@@ -48,3 +48,48 @@ def iter_listings(region: str, start_page: int = 1, max_pages: int = 100) -> Ite
         page += 1
         # Polite delay between API calls
         time.sleep(random.uniform(config.API_MIN_DELAY, config.API_MAX_DELAY))
+
+
+def _join(value) -> str:
+    """Join list values with ', ', stringify scalar, or '' if missing."""
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value)
+    return str(value)
+
+
+def to_csv_row(item: Dict) -> Dict[str, str]:
+    """Map one API listing item to the CSV row schema expected by 2_clean.py / 3_load_to_db.py."""
+    a = item.get("attributes", {})
+
+    size = a.get("size", "")
+    size_suffix = a.get("size_suffix", "")
+    size_str = f"{size} {size_suffix}".strip() if size else ""
+
+    price_label = a.get("price_label", "")
+    monthly_rent = f"{price_label} per month" if price_label else ""
+
+    cat = a.get("category_name", "")
+    category_id = f"{cat}, For rent" if cat else ""
+
+    address = f"{a.get('building_name', '')}, {a.get('subarea_name', '')}, {a.get('region_name', '')}"
+
+    return {
+        "ads_id": str(a.get("list_id", "")),
+        "monthly_rent": monthly_rent,
+        "property_type": _join(a.get("property_type_name")),
+        "category_id": category_id,
+        "state": _join(a.get("region_name")),
+        "region": _join(a.get("subarea_name")),
+        "rooms": _join(a.get("rooms_name")),
+        "bathroom": _join(a.get("bathroom_name")),
+        "size": size_str,
+        "furnished": _join(a.get("furnished_name")),
+        "facilities": _join(a.get("facilities_name")),
+        "additional_facilities": _join(a.get("additional_facilities_name")),
+        "body": _join(a.get("body")),
+        "address": address,
+        "publishedDatetime": _join(a.get("published_date") or a.get("date")),
+        "adviewUrl": _join(a.get("adview_url")),
+    }
