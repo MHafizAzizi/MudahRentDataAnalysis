@@ -60,9 +60,9 @@ def create_mapping_dict(mapping_df: pd.DataFrame) -> dict:
         if pd.isna(mudah_type):
             continue
         std_type = row['Standardized Property Type']
-        if pd.isna(std_type) or not str(std_type).startswith('Sewa '):
+        if pd.isna(std_type):
             continue
-        mapped = str(std_type)[5:]
+        mapped = str(std_type)
         if '\n' in str(mudah_type):
             for t in str(mudah_type).split('\n'):
                 if t.strip():
