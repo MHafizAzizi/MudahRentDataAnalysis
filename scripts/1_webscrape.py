@@ -4,6 +4,7 @@ Fetches property rental listings via Mudah's public search API,
 geocodes the resulting addresses, and writes a CSV.
 """
 import sys
+import sqlite3
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
@@ -46,6 +47,19 @@ def _save_geocache(cache: dict) -> None:
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
+def _load_known_ads_ids() -> set:
+    """Return set of ads_id strings already in DB. Empty set if DB missing or inaccessible."""
+    if not config.DB_FILE.exists():
+        return set()
+    try:
+        with sqlite3.connect(config.DB_FILE) as conn:
+            rows = conn.execute(f"SELECT ads_id FROM {config.DB_TABLE}").fetchall()
+        return {r[0] for r in rows}
+    except Exception as e:
+        logger.warning(f"Could not load known ads_ids from DB: {e}")
+        return set()
+
+
 def geocode(query: str, cache: dict) -> Tuple[Optional[float], Optional[float]]:
     """Geocode `query` with cache. Returns (None, None) on miss/fail."""
     if not query:
@@ -65,7 +79,7 @@ def geocode(query: str, cache: dict) -> Tuple[Optional[float], Optional[float]]:
     return result
 
 
-def scrape(state: str, start_page: int, end_page: int) -> pd.DataFrame:
+def scrape(state: str, start_page: int, end_page: int, skip_known: bool = True) -> pd.DataFrame:
     """Scrape rental listings for `state` (URL slug) over the given page range."""
     state_key = (state or "").strip().lower()
     if state_key not in config.REGION_CODES:
@@ -82,6 +96,13 @@ def scrape(state: str, start_page: int, end_page: int) -> pd.DataFrame:
     logger.info(f"Fetching listings: state={state_key} region={region} pages {start_page}..{end_page}")
     items = list(mudah_api.iter_listings(region=region, start_page=start_page, max_pages=max_pages))
     logger.info(f"API returned {len(items)} listings")
+
+    if skip_known:
+        known = _load_known_ads_ids()
+        if known:
+            before = len(items)
+            items = [i for i in items if str(i.get("attributes", {}).get("list_id", "")) not in known]
+            logger.info(f"Skipping {before - len(items)} known listings. {len(items)} to scrape.")
 
     for item in tqdm(items, desc="Transform + geocode"):
         row = mudah_api.to_csv_row(item)
