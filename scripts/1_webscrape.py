@@ -8,6 +8,7 @@ from scripts.logger import get_logger
 
 logger = get_logger("webscrape")
 
+import sqlite3
 import cloudscraper
 import pandas as pd
 from bs4 import BeautifulSoup
@@ -60,6 +61,20 @@ def _load_geocache() -> dict:
 def _save_geocache(cache: dict) -> None:
     with open(config.GEO_CACHE_FILE, "w", encoding="utf-8") as f:
         json.dump(cache, f, ensure_ascii=False, indent=2)
+
+
+def _load_known_ads_ids() -> set:
+    """Return set of ads_id strings already in DB. Empty set if DB missing or inaccessible."""
+    if not config.DB_FILE.exists():
+        return set()
+    try:
+        with sqlite3.connect(config.DB_FILE) as conn:
+            rows = conn.execute(f"SELECT ads_id FROM {config.DB_TABLE}").fetchall()
+        return {r[0] for r in rows}
+    except Exception as e:
+        logger.warning(f"Could not load known ads_ids from DB: {e}")
+        return set()
+
 
 # Initialize scraper from config
 SCRAPER = cloudscraper.create_scraper(
@@ -242,7 +257,7 @@ def parse_datetime(datetime_str: str) -> str:
     except ValueError:
         return datetime_str
 
-def scrape_property_details(state: str, start_page: int, end_page: int, sleep_time: int = None) -> pd.DataFrame:
+def scrape_property_details(state: str, start_page: int, end_page: int, sleep_time: int = None, skip_known: bool = True) -> pd.DataFrame:
     """Scrape property details for the given state and page range."""
     if sleep_time is None:
         sleep_time = config.BASE_SLEEP_TIME
@@ -250,6 +265,18 @@ def scrape_property_details(state: str, start_page: int, end_page: int, sleep_ti
     geocache = _load_geocache()
     property_data = []
     links = get_property_links(state, start_page, end_page)
+
+    if skip_known:
+        known = _load_known_ads_ids()
+        if known:
+            before = len(links)
+            filtered = []
+            for url in links:
+                m = re.search(r'-(\d+)\.htm', url)
+                if not m or m.group(1) not in known:
+                    filtered.append(url)
+            links = filtered
+            logger.info(f"Skipping {before - len(links)} known listings. {len(links)} to scrape.")
 
     for url in tqdm(links, desc="Scraping..."):
         try:
