@@ -94,7 +94,12 @@ def scrape(state: str, start_page: int, end_page: int, skip_known: bool = True) 
     today = datetime.now().strftime("%Y-%m-%d")
 
     logger.info(f"Fetching listings: state={state_key} region={region} pages {start_page}..{end_page}")
-    items = list(mudah_api.iter_listings(region=region, start_page=start_page, max_pages=max_pages))
+    items = list(tqdm(
+        mudah_api.iter_listings(region=region, start_page=start_page, max_pages=max_pages),
+        desc="Fetching listings",
+        total=max_pages * config.API_PAGE_SIZE,
+        unit=" listing",
+    ))
     logger.info(f"API returned {len(items)} listings")
 
     if skip_known:
