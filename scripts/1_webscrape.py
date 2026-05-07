@@ -44,7 +44,7 @@ def _load_geocache() -> dict:
 
 def _save_geocache(cache: dict) -> None:
     with open(config.GEO_CACHE_FILE, "w", encoding="utf-8") as f:
-        json.dump(cache, f, ensure_ascii=False, indent=2)
+        json.dump(cache, f, ensure_ascii=False)
 
 
 def _load_known_ads_ids() -> set:
