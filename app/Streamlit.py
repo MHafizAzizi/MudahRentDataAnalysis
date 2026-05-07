@@ -15,14 +15,22 @@ st.title("Mudah Rental Analysis")
 st.write("Reporting dashboard of rental properties scraped from Mudah Website. Data updates periodically.")
 
 
-@st.cache_data
+_DB_COLS = [
+    "ads_id", "monthly_rent", "property_type", "CPI", "state", "region",
+    "rooms", "bathroom", "size", "furnished", "facilities",
+    "additional_facilities", "address", "latitude", "longitude",
+    "publishedDatetime", "scrape_date", "adviewUrl",
+]
+
+@st.cache_data(ttl=3600)
 def load_data() -> pd.DataFrame:
     if not config.DB_FILE.exists():
         st.error(f"Database not found: {config.DB_FILE}. Run scripts 1 → 2 → 3 first.")
         st.stop()
 
+    cols = ", ".join(_DB_COLS)
     with sqlite3.connect(config.DB_FILE) as conn:
-        df = pd.read_sql(f"SELECT * FROM {config.DB_TABLE}", conn)
+        df = pd.read_sql(f"SELECT {cols} FROM {config.DB_TABLE}", conn)
 
     df['state'] = df['state'].fillna('Not Specified').str.strip().str.title()
     df['CPI'] = df['CPI'].fillna('Not Specified').str.strip()
@@ -48,13 +56,15 @@ with col3:
     st.metric(label="Average Property Size (sq.ft.)", value=round(df["size"].mean(), 1))
 
 
-def total_prop_by_type():
+@st.cache_data
+def total_prop_by_type(df: pd.DataFrame) -> pd.DataFrame:
     count = df.groupby('CPI').size().reset_index(name='total_properties')
     avg = df.groupby('CPI')['monthly_rent'].mean().reset_index()
     return pd.merge(avg, count, on='CPI')
 
 
-def total_prop_by_state():
+@st.cache_data
+def total_prop_by_state(df: pd.DataFrame) -> pd.DataFrame:
     count = df.groupby('state').size().reset_index(name='total_properties')
     avg = df.groupby('state')['monthly_rent'].mean().reset_index()
     return pd.merge(avg, count, on='state')
@@ -63,7 +73,7 @@ def total_prop_by_state():
 col1, col2 = st.columns(2)
 with col1:
     st.subheader("Average Rent By Property Type")
-    merged_data = total_prop_by_type()
+    merged_data = total_prop_by_type(df)
     fig = px.bar(merged_data,
                  color='CPI', x='CPI', y='monthly_rent',
                  labels={'CPI': 'Property Type',
@@ -83,7 +93,7 @@ with col2:
 
 st.markdown("---")
 st.subheader("Average Rent By State", divider="rainbow")
-state_data = total_prop_by_state()
+state_data = total_prop_by_state(df)
 fig_state = px.bar(state_data,
                    color='state', x='state', y='monthly_rent',
                    labels={'state': 'State',
