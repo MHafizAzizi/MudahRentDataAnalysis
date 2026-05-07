@@ -73,7 +73,8 @@ def to_csv_row(item: Dict) -> Dict[str, str]:
     cat = a.get("category_name", "")
     category_id = f"{cat}, For rent" if cat else ""
 
-    address = f"{a.get('building_name', '')}, {a.get('subarea_name', '')}, {a.get('region_name', '')}"
+    _addr_parts = [a.get("building_name") or "", a.get("subarea_name") or "", a.get("region_name") or ""]
+    address = ", ".join(p for p in _addr_parts if p.strip())
 
     return {
         "ads_id": str(a.get("list_id", "")),

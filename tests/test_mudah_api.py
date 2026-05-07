@@ -132,7 +132,7 @@ def test_to_csv_row_handles_missing_optional_fields():
     assert row["ads_id"] == "999"
     assert row["state"] == "Selangor"
     assert row["facilities"] == ""
-    assert row["address"] == ", , Selangor"
+    assert row["address"] == "Selangor"
 
 
 def test_geocode_query_skips_empty_parts():
@@ -147,3 +147,24 @@ def test_geocode_query_includes_building_when_present():
 
 def test_geocode_query_handles_all_empty():
     assert mudah_api.geocode_query({}) == ""
+
+
+def test_to_csv_row_address_no_leading_comma():
+    """Address must not start with ', ' when building_name is absent."""
+    item = {
+        "attributes": {
+            "list_id": "123",
+            "building_name": "",
+            "subarea_name": "Subang Jaya",
+            "region_name": "Selangor",
+        }
+    }
+    row = mudah_api.to_csv_row(item)
+    assert not row["address"].startswith(","), f"Got: {row['address']!r}"
+
+
+def test_to_csv_row_address_all_empty():
+    """Address must be empty string when all parts absent."""
+    item = {"attributes": {"list_id": "456", "building_name": "", "subarea_name": "", "region_name": ""}}
+    row = mudah_api.to_csv_row(item)
+    assert row["address"] == ""

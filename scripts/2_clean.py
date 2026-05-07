@@ -54,22 +54,16 @@ def clean_rental_data(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def create_mapping_dict(mapping_df: pd.DataFrame) -> dict:
-    mapping_dict = {}
-    for _, row in mapping_df.iterrows():
-        mudah_type = row['Mudah Property Type']
-        if pd.isna(mudah_type):
-            continue
-        std_type = row['Standardized Property Type']
-        if pd.isna(std_type):
-            continue
-        mapped = str(std_type)
-        if '\n' in str(mudah_type):
-            for t in str(mudah_type).split('\n'):
-                if t.strip():
-                    mapping_dict[t.strip()] = mapped
-        else:
-            mapping_dict[str(mudah_type)] = mapped
-    return mapping_dict
+    result = {}
+    valid = mapping_df.dropna(subset=["Mudah Property Type", "Standardized Property Type"])
+    for _, row in valid.iterrows():
+        std_type = str(row["Standardized Property Type"])
+        mudah_type = str(row["Mudah Property Type"])
+        for t in mudah_type.split("\n"):
+            t = t.strip()
+            if t:
+                result[t] = std_type
+    return result
 
 
 def clean_raw_files():
@@ -82,6 +76,11 @@ def clean_raw_files():
         return
 
     for raw_path in raw_files:
+        out_path = config.PROCESSED_DATA_DIR / raw_path.name
+        if out_path.exists():
+            logger.info(f"Already processed, skipping: {raw_path.name}")
+            continue
+
         try:
             df = pd.read_csv(raw_path)
             cleaned_df = clean_rental_data(df)
@@ -91,7 +90,6 @@ def clean_raw_files():
                     lambda x: mapping_dict.get(str(x).strip(), 'Other') if pd.notna(x) else 'Other'
                 )
 
-            out_path = config.PROCESSED_DATA_DIR / raw_path.name
             cleaned_df.to_csv(out_path, index=False)
             logger.info(f"Cleaned: {raw_path.name} → {out_path}")
 

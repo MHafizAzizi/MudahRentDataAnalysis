@@ -91,3 +91,12 @@ class TestScrapeFiltering:
         mock_api = self._patch_common(webscrape_module, monkeypatch, tmp_path, ["111", "222", "333"])
         webscrape_module.scrape("selangor", 1, 1)
         assert mock_api.to_csv_row.call_count == 0
+
+
+def test_backfill_imports_without_error():
+    """Regression: backfill_geocode previously referenced _geocode_query which doesn't exist."""
+    import importlib, sys
+    for key in list(sys.modules.keys()):
+        if 'backfill' in key:
+            del sys.modules[key]
+    import scripts.backfill_geocode  # must not raise AttributeError
