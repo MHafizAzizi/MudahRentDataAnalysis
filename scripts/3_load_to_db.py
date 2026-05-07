@@ -45,6 +45,22 @@ CREATE_INDEXES_SQL = [
 ]
 
 
+_DEDUP_COLS = "monthly_rent, property_type, state, region, rooms, bathroom, size, furnished, address, publishedDatetime"
+
+def _dedup(conn: sqlite3.Connection) -> int:
+    """Delete content-duplicate rows, keeping the lowest ads_id per group. Returns rows deleted."""
+    cur = conn.execute(f"""
+        DELETE FROM {config.DB_TABLE}
+        WHERE ads_id NOT IN (
+            SELECT MIN(ads_id)
+            FROM {config.DB_TABLE}
+            GROUP BY {_DEDUP_COLS}
+        )
+    """)
+    conn.commit()
+    return cur.rowcount
+
+
 def upsert_dataframe(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
     """Insert or replace rows by ads_id. Returns number of rows upserted."""
     if 'ads_id' not in df.columns:
@@ -117,6 +133,10 @@ def load_processed_files():
             conn.rollback()
             logger.error(f"Error loading {csv_path.name}: {e}")
             continue
+
+    deleted = _dedup(conn)
+    if deleted:
+        logger.info(f"Dedup removed {deleted} content-duplicate rows (kept lowest ads_id per group).")
 
     conn.close()
     logger.info(f"Done. Total rows upserted: {total_upserted}. DB: {config.DB_FILE}")
