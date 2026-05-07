@@ -73,3 +73,24 @@ class TestCleanRentalData:
         original_rent = sample_raw_df['monthly_rent'].iloc[0]
         clean_module.clean_rental_data(sample_raw_df)
         assert sample_raw_df['monthly_rent'].iloc[0] == original_rent
+
+
+def test_create_mapping_dict_basic(clean_module):
+    mapping_df = pd.DataFrame({
+        "Mudah Property Type": ["Apartment", "Condo\nCondominium"],
+        "Standardized Property Type": ["Apartment", "Condominium"],
+    })
+    result = clean_module.create_mapping_dict(mapping_df)
+    assert result["Apartment"] == "Apartment"
+    assert result["Condo"] == "Condominium"
+    assert result["Condominium"] == "Condominium"
+
+
+def test_create_mapping_dict_skips_nan(clean_module):
+    mapping_df = pd.DataFrame({
+        "Mudah Property Type": [float("nan"), "House"],
+        "Standardized Property Type": ["Should be skipped", "Terrace"],
+    })
+    result = clean_module.create_mapping_dict(mapping_df)
+    assert "Should be skipped" not in result.values()
+    assert result["House"] == "Terrace"
