@@ -13,18 +13,23 @@ Mudah.my's listing pages are Next.js apps that hydrate listing data client-side 
 
 ```
 GET https://search.mudah.my/v1/search
-    ?category=2000        # properties (parent category)
-    &type=let             # rental (vs. 'sell')
-    &region=<id>          # 1..17, one per Malaysian state (see config.REGION_CODES)
-    &from=<offset>        # pagination offset (24 per page)
-    &fields=all           # return every attribute incl. body, facilities, furnished, etc.
+    ?category=2000             # properties (parent category)
+    &type=let                  # rental (vs. 'sell')
+    &region=<id>               # 1..17, one per Malaysian state (see config.REGION_CODES)
+    &from=<offset>             # pagination offset (24 per page)
+    &fields=all                # broadest field set the search endpoint serves
+    &property_type_id=<id>     # optional: filter by type (see config.RESIDENTIAL_PROPERTY_TYPE_IDS)
 ```
 
-A single request returns up to 24 listings with full structured attributes (`monthly_rent`, `property_type_name`, `rooms_name`, `bathroom_name`, `size`, `furnished_name`, `facilities_name`, `body`, `building_name`, `subarea_name`, `region_name`, `published_date`, `adview_url`, …) — no HTML parsing, no per-listing detail page fetch.
+A single request returns up to 24 listings with structured attributes: `monthly_rent`, `property_type_name`, `property_type_id`, `category_name`, `rooms_name`, `bathroom_name`, `size`, `building_name`, `subarea_name`, `region_name`, `date`, `ad_expiry`, `adview_url`, … — no HTML parsing.
+
+> **Search endpoint does NOT return** `furnished`, `facilities`, `additional_facilities`, or `body`. These exist only on the per-listing detail page; the scraper emits empty values for them. Recover them with the optional `scripts/enrich_details.py` backfill (fetches each detail page's `__NEXT_DATA__` blob — see below).
+
+**Depth cap:** the API returns an empty `data` array at offset ≥ ~9,984, no matter how many `total-results` it reports. To get full coverage of a large region, filter by `property_type_id` — each type has its own depth window. `iter_listings`/`scrape` accept `property_type_id`, and `scrape_all_types()` loops every residential type.
 
 `scripts/mudah_api.py` wraps this:
-- `search(region, offset)` — one API call
-- `iter_listings(region, start_page, max_pages)` — generator that paginates and stops early on a partial page
+- `search(region, offset, property_type_id=None)` — one API call; retries 403/429/5xx with backoff + `Retry-After`
+- `iter_listings(region, start_page, max_pages, property_type_id=None)` — paginates, stops early on a partial page
 - `to_csv_row(item)` — maps an API item to the project's CSV schema
 - `geocode_query(attributes)` — composes `building, subarea, region, Malaysia` for Nominatim
 
@@ -35,7 +40,7 @@ A single request returns up to 24 listings with full structured attributes (`mon
 ### Trade-offs vs. HTML scraping
 - **Pro:** ~25× faster (1 page Selangor: 12s vs 5min). No Cloudflare 403s. Cleaner structured data.
 - **Con:** No street-level address — only `building_name + subarea_name + region_name`. Geocoding precision is coarser for listings that previously had a street address. Acceptable for state/region-level analytics.
-- **Risk:** API is undocumented. If Mudah changes the param names or response shape, the scraper breaks. Run `pytest tests/test_mudah_api.py` after any Mudah front-end change to detect drift.
+- **Risk:** API is undocumented. If Mudah changes the param names or response shape, the scraper breaks. Run the live smoke test before a scrape to catch drift early: `MUDAH_LIVE_TEST=1 pytest tests/test_api_live.py` (hits the real API; the normal suite skips it).
 
 ---
 
@@ -54,6 +59,7 @@ MudahRentDataAnalysis/
 │   ├── mudah_api.py           # Mudah search API client + transformer
 │   ├── discover_regions.py    # One-shot probe to enumerate REGION_CODES
 │   ├── backfill_geocode.py    # Backfill missing lat/lon in DB
+│   ├── enrich_details.py      # Optional: backfill furnished/facilities/body from detail pages
 │   └── logger.py              # Shared logging
 │
 ├── tests/
@@ -117,6 +123,9 @@ pip install -r requirements.txt
 # Full pipeline: scrape + clean + load
 python run_pipeline.py --state selangor --start 1 --end 10
 
+# Full coverage: scrape every residential property type (bypasses the ~10k depth cap)
+python run_pipeline.py --state selangor --all-types
+
 # Skip scraping — clean and load existing raw files only
 python run_pipeline.py --skip-scrape
 ```
@@ -167,6 +176,23 @@ python scripts/backfill_geocode.py
 - Coords are region-centroid level (good for heatmaps, not street-level)
 - Reuses `data/geocache.json`
 - Always backup the DB before running: `cp data/mudah_rent.db data/mudah_rent.db.bak`
+
+### 6. Enrich detail-only fields (optional)
+
+`furnished`, `facilities`, `additional_facilities`, and `body` are NOT in the search
+API response — only on each listing's detail page. This backfill fetches those pages
+and fills the columns:
+
+```bash
+python scripts/enrich_details.py            # all rows missing those fields
+python scripts/enrich_details.py --limit 50 # cap for a test run
+```
+
+- Selects DB rows that have an `adviewUrl` but are missing any enrichment field
+- Parses the detail page's `__NEXT_DATA__` JSON (`furnished`/`facilities`/`additional_facilities` from `categoryParams`, `body` from attributes)
+- Uses `cloudscraper` (detail pages sit behind Cloudflare) with polite delays — slow, one request per listing
+- Optional, separate pass — NOT part of `run_pipeline.py`
+- Always back up the DB first: `cp data/mudah_rent.db data/mudah_rent.db.bak`
 
 ---
 

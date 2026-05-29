@@ -4,33 +4,10 @@ import pytest
 
 
 @pytest.fixture
-def in_memory_conn():
-    """SQLite in-memory connection with properties table."""
+def in_memory_conn(load_module):
+    """SQLite in-memory connection with properties table, schema from the module."""
     conn = sqlite3.connect(":memory:")
-    conn.execute("""
-        CREATE TABLE properties (
-            ads_id TEXT PRIMARY KEY,
-            monthly_rent REAL,
-            property_type TEXT,
-            category_id TEXT,
-            CPI TEXT,
-            state TEXT,
-            region TEXT,
-            rooms TEXT,
-            bathroom TEXT,
-            size REAL,
-            furnished TEXT,
-            facilities TEXT,
-            additional_facilities TEXT,
-            body TEXT,
-            address TEXT,
-            latitude REAL,
-            longitude REAL,
-            publishedDatetime TEXT,
-            scrape_date TEXT,
-            adviewUrl TEXT
-        )
-    """)
+    conn.execute(load_module.CREATE_TABLE_SQL)
     conn.commit()
     return conn
 

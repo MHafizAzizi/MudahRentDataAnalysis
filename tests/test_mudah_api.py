@@ -25,6 +25,86 @@ def test_search_builds_correct_url():
 
 
 @responses.activate
+def test_search_includes_property_type_id_when_given():
+    responses.add(
+        responses.GET,
+        "https://search.mudah.my/v1/search",
+        json={"data": [], "meta": {"total-results": 0}},
+        status=200,
+    )
+    mudah_api.search(region="8", offset=0, property_type_id=5)
+    assert "property_type_id=5" in responses.calls[0].request.url
+
+
+@responses.activate
+def test_search_omits_property_type_id_by_default():
+    responses.add(
+        responses.GET,
+        "https://search.mudah.my/v1/search",
+        json={"data": [], "meta": {"total-results": 0}},
+        status=200,
+    )
+    mudah_api.search(region="8", offset=0)
+    assert "property_type_id" not in responses.calls[0].request.url
+
+
+@responses.activate
+def test_search_retries_on_429_then_succeeds(monkeypatch):
+    monkeypatch.setattr("scripts.mudah_api.time.sleep", lambda _: None)
+    responses.add(responses.GET, "https://search.mudah.my/v1/search", status=429)
+    responses.add(
+        responses.GET,
+        "https://search.mudah.my/v1/search",
+        json={"data": [{"id": 1, "attributes": {"list_id": 1}}], "meta": {}},
+        status=200,
+    )
+    result = mudah_api.search(region="8", offset=0)
+    assert result["data"][0]["attributes"]["list_id"] == 1
+    assert len(responses.calls) == 2
+
+
+@responses.activate
+def test_search_retries_on_403_rate_limit(monkeypatch):
+    monkeypatch.setattr("scripts.mudah_api.time.sleep", lambda _: None)
+    responses.add(responses.GET, "https://search.mudah.my/v1/search", status=403)
+    responses.add(
+        responses.GET,
+        "https://search.mudah.my/v1/search",
+        json={"data": [], "meta": {}},
+        status=200,
+    )
+    result = mudah_api.search(region="8", offset=0)
+    assert result == {"data": [], "meta": {}}
+    assert len(responses.calls) == 2
+
+
+@responses.activate
+def test_search_honors_retry_after_header(monkeypatch):
+    waits = []
+    monkeypatch.setattr("scripts.mudah_api.time.sleep", lambda s: waits.append(s))
+    responses.add(
+        responses.GET, "https://search.mudah.my/v1/search",
+        status=429, headers={"Retry-After": "7"},
+    )
+    responses.add(
+        responses.GET, "https://search.mudah.my/v1/search",
+        json={"data": [], "meta": {}}, status=200,
+    )
+    mudah_api.search(region="8", offset=0)
+    assert waits == [7.0]
+
+
+@responses.activate
+def test_search_raises_after_exhausting_retries(monkeypatch):
+    monkeypatch.setattr("scripts.mudah_api.time.sleep", lambda _: None)
+    import config
+    for _ in range(config.API_MAX_RETRIES + 1):
+        responses.add(responses.GET, "https://search.mudah.my/v1/search", status=429)
+    with pytest.raises(Exception):
+        mudah_api.search(region="8", offset=0)
+
+
+@responses.activate
 def test_search_returns_data_list():
     sample = {
         "data": [{"id": 111, "attributes": {"list_id": 111, "subject": "test"}}],

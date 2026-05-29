@@ -32,23 +32,48 @@ A data pipeline that pulls Malaysian rental listings from the **Mudah.my public 
 
 ---
 
+## API Facts (discovered 2026-05-29, via live probe)
+
+- **Depth cap:** the search API returns an empty `data` array at offset ≥ ~9,984, regardless of `total-results`. Stored as `config.API_OFFSET_CAP`. Selangor reports 36,393 total but only ~9,960 are reachable in a single unfiltered query.
+- **Workaround:** filter by `property_type_id` — every residential type's total is well under the cap (largest: Service Residence ≈ 5,754). `scrape_all_types()` loops all residential types for full coverage. See `config.RESIDENTIAL_PROPERTY_TYPE_IDS`.
+- **Filter param name:** `property_type_id` (1=Condominium, 2=Apartment, 5=Service Residence, …). Commercial types 21–24 (Office, Shop lot, Warehouse) deliberately excluded.
+- **`ad_expiry` field EXISTS** in the response (e.g. posted 2026-05-29, expires 2026-07-30 ≈ 62-day window). Not yet captured into the schema — enables sold/expired inference if a recheck step is added.
+- **Rate limiting:** rapid requests return HTTP 403 (not 429). `mudah_api.search()` now retries 403/429/5xx with backoff + `Retry-After`.
+- **KNOWN GAP:** the search endpoint does **not** return `furnished`, `facilities`, `additional_facilities`, or `body` — these come back empty on every listing (verified across pages), despite the README's claim. They live only on the listing detail page. Capturing them would require a detail-page enrichment step (not yet built).
+
 ## What Changed (Last Session — 2026-05-29)
 
-- Created `context.md` and `CLAUDE.md` for session continuity.
-- **Task 1 done** — Fixed `backfill_geocode.py:33`: `_geocode_query` → `_geocode`, call site on line 62 updated to match.
-- **Task 2 done** — Fixed `mudah_api.py:76`: address no longer starts with `", "` when `building_name` is empty. Updated existing test that was asserting the broken format.
-- **Task 3a done** — Simplified `create_mapping_dict` in `2_clean.py`: replaced manual `isna` checks with `dropna`, unified split loop.
-- **Task 3b done** — Added skip-guard in `clean_raw_files`: skips files where processed output already exists.
-- **Task 5 done** — Removed `indent=2` from `_save_geocache` in `1_webscrape.py`.
-- **Streamlit removed** — Deleted `app/` directory, removed `streamlit` and `plotly` from `requirements.txt`, scrubbed all references from `README.md`.
-- Added `responses>=0.25` to `requirements.txt` (was missing, required by tests).
-- All 33 tests pass.
+- **Detail-API probe (done)** — Confirmed NO dedicated detail JSON API exists. `?list_id=X` returns a stripped 200 with no furnishing data; `/v1/listing|listings|ad/X` all 404/410; `ad.mudah.my` host doesn't exist. Detail-only fields are recoverable ONLY from the listing detail page HTML.
+- **`scripts/enrich_details.py` (new)** — Optional backfill for `furnished` / `facilities` / `additional_facilities` / `body`. Fetches each row's `adviewUrl` via `cloudscraper`, parses `props.initialState.adDetails.byID.<list_id>.attributes` from `__NEXT_DATA__`. `furnished`/`facilities`/`additional_facilities` come from the `categoryParams` array (keyed by `id`); `body` is a top-level attribute. Selects DB rows with an `adviewUrl` but missing any enrich field. `--limit N` for test runs. NOT wired into `run_pipeline.py`.
+- **Config** — Added `ENRICH_FIELDS`, `ENRICH_MIN_DELAY` (2.0), `ENRICH_MAX_DELAY` (5.0), `ENRICH_REQUEST_TIMEOUT` (30).
+- **Tests** — Added `tests/test_enrich.py` (parser + url-id extraction, 7 tests, HTML mocked) and `enrich_module` fixture in `conftest.py`.
+- **Docs** — README: documented enrich step, folder structure, the detail-page note. context.md updated.
+- 46 passed, 3 skipped (live API tests, gated by `MUDAH_LIVE_TEST=1`).
+
+### Earlier this session (pre-compaction)
+- Created `context.md` + `CLAUDE.md`; removed Streamlit (`app/`, deps, README refs).
+- `mudah_api.py`: retry/backoff with `Retry-After` (403/429/5xx), `property_type_id` param, 9 new fields in `to_csv_row` (subject, property_type_id, subarea_id, building_id, seller_name, company_ad, ad_seller_type, store_verified, ad_expiry — image_count excluded), address-prefix fix.
+- `config.py`: `API_USER_AGENT`, `API_MAX_RETRIES`, `API_BACKOFF_BASE`, `API_RETRY_MAX_WAIT`, `API_OFFSET_CAP=9984`, `RESIDENTIAL_PROPERTY_TYPE_IDS`.
+- `1_webscrape.py`: `scrape_all_types()` loops residential types to bypass depth cap; compact geocache write.
+- `run_pipeline.py`: `--all-types` flag.
+- `3_load_to_db.py`: schema + db_cols expanded to 29 columns; added `idx_ad_expiry`, `idx_property_type_id`.
+- `tests/test_load.py`: `in_memory_conn` now uses `load_module.CREATE_TABLE_SQL` (no schema drift). Added `tests/test_api_live.py` (live smoke test). `responses>=0.25` added to requirements.
 
 ---
 
 ## Pending Tasks
 
-No pending tasks. All known optimisation tasks are complete and Streamlit has been removed.
+Applied recommendations from `F:\Coding\CarData\docs\HANDOVER_PROPERTIES.md`. Done this session:
+- Retry/backoff with `Retry-After` in `mudah_api.search()`.
+- `property_type_id` filtering + `scrape_all_types()` to bypass the depth cap.
+- Live schema-drift smoke test (`tests/test_api_live.py`, gated by `MUDAH_LIVE_TEST=1`).
+
+Still pending (deferred from the handover):
+- **`recheck.py`** — availability tracking with a decay policy (daily → 3-day → weekly → stop). Would use the `ad_expiry` field to distinguish rented-early vs expired. Requires `last_checked_at` / `availability_status` columns.
+
+Done since last update:
+- **Detail-page enrichment** — DONE. `scripts/enrich_details.py` recovers `furnished` / `facilities` / `additional_facilities` / `body` from detail-page HTML (search API omits them). Optional backfill pass.
+- **Capture `ad_expiry`** into schema — DONE (added to `to_csv_row` + DB schema).
 
 ---
 
@@ -62,8 +87,8 @@ No pending tasks. All known optimisation tasks are complete and Streamlit has be
 | `scripts/2_clean.py` | Cleans raw CSVs → processed CSVs |
 | `scripts/3_load_to_db.py` | Upserts processed CSVs → SQLite |
 | `scripts/backfill_geocode.py` | Backfills NULL lat/lon in DB using region-level geocoding |
+| `scripts/enrich_details.py` | Optional backfill: furnished/facilities/additional_facilities/body from detail-page HTML |
 | `scripts/discover_regions.py` | One-shot: enumerate Mudah region IDs |
-| `app/Streamlit.py` | Dashboard (reads from SQLite) |
 | `tests/test_mudah_api.py` | API client + transformer tests (HTTP mocked) |
 | `tests/test_clean.py` | Cleaning function tests |
 | `data/geocache.json` | Geocode cache (query → lat/lon) |

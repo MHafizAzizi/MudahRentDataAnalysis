@@ -15,12 +15,16 @@ import shutil
 CREATE_TABLE_SQL = f"""
 CREATE TABLE IF NOT EXISTS {config.DB_TABLE} (
     ads_id                TEXT PRIMARY KEY,
+    subject               TEXT,
     monthly_rent          REAL,
     property_type         TEXT,
+    property_type_id      TEXT,
     category_id           TEXT,
     CPI                   TEXT,
     state                 TEXT,
     region                TEXT,
+    subarea_id            TEXT,
+    building_id           TEXT,
     rooms                 TEXT,
     bathroom              TEXT,
     size                  REAL,
@@ -29,6 +33,11 @@ CREATE TABLE IF NOT EXISTS {config.DB_TABLE} (
     additional_facilities TEXT,
     body                  TEXT,
     address               TEXT,
+    seller_name           TEXT,
+    company_ad            TEXT,
+    ad_seller_type        TEXT,
+    store_verified        TEXT,
+    ad_expiry             TEXT,
     latitude              REAL,
     longitude             REAL,
     publishedDatetime     TEXT,
@@ -42,6 +51,8 @@ CREATE_INDEXES_SQL = [
     f"CREATE INDEX IF NOT EXISTS idx_cpi ON {config.DB_TABLE}(CPI);",
     f"CREATE INDEX IF NOT EXISTS idx_monthly_rent ON {config.DB_TABLE}(monthly_rent);",
     f"CREATE INDEX IF NOT EXISTS idx_scrape_date ON {config.DB_TABLE}(scrape_date);",
+    f"CREATE INDEX IF NOT EXISTS idx_ad_expiry ON {config.DB_TABLE}(ad_expiry);",
+    f"CREATE INDEX IF NOT EXISTS idx_property_type_id ON {config.DB_TABLE}(property_type_id);",
 ]
 
 
@@ -54,9 +65,11 @@ def upsert_dataframe(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
 
     # Align columns to DB schema, fill missing with None
     db_cols = [
-        'ads_id', 'monthly_rent', 'property_type', 'category_id', 'CPI',
-        'state', 'region', 'rooms', 'bathroom', 'size', 'furnished',
-        'facilities', 'additional_facilities', 'body', 'address',
+        'ads_id', 'subject', 'monthly_rent', 'property_type', 'property_type_id',
+        'category_id', 'CPI', 'state', 'region', 'subarea_id', 'building_id',
+        'rooms', 'bathroom', 'size', 'furnished', 'facilities',
+        'additional_facilities', 'body', 'address', 'seller_name', 'company_ad',
+        'ad_seller_type', 'store_verified', 'ad_expiry',
         'latitude', 'longitude', 'publishedDatetime', 'scrape_date', 'adviewUrl'
     ]
     for col in db_cols:

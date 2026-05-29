@@ -30,6 +30,11 @@ def load_module():
     return load_script("3_load_to_db.py")
 
 
+@pytest.fixture(scope="session")
+def enrich_module():
+    return load_script("enrich_details.py")
+
+
 @pytest.fixture
 def sample_raw_df():
     """Sample raw DataFrame as it comes from the scraper."""

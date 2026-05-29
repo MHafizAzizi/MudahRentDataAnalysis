@@ -65,8 +65,12 @@ def geocode(query: str, cache: dict) -> Tuple[Optional[float], Optional[float]]:
     return result
 
 
-def scrape(state: str, start_page: int, end_page: int) -> pd.DataFrame:
-    """Scrape rental listings for `state` (URL slug) over the given page range."""
+def scrape(state: str, start_page: int, end_page: int,
+           property_type_id: Optional[int] = None) -> pd.DataFrame:
+    """Scrape rental listings for `state` (URL slug) over the given page range.
+
+    Pass property_type_id to scrape a single property type (its own depth window).
+    """
     state_key = (state or "").strip().lower()
     if state_key not in config.REGION_CODES:
         raise ValueError(
@@ -79,8 +83,11 @@ def scrape(state: str, start_page: int, end_page: int) -> pd.DataFrame:
     rows = []
     today = datetime.now().strftime("%Y-%m-%d")
 
-    logger.info(f"Fetching listings: state={state_key} region={region} pages {start_page}..{end_page}")
-    items = list(mudah_api.iter_listings(region=region, start_page=start_page, max_pages=max_pages))
+    logger.info(f"Fetching listings: state={state_key} region={region} pages {start_page}..{end_page} property_type_id={property_type_id}")
+    items = list(mudah_api.iter_listings(
+        region=region, start_page=start_page, max_pages=max_pages,
+        property_type_id=property_type_id,
+    ))
     logger.info(f"API returned {len(items)} listings")
 
     for item in tqdm(items, desc="Transform + geocode"):
@@ -97,12 +104,45 @@ def scrape(state: str, start_page: int, end_page: int) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def scrape_all_types(state: str, start_page: int = 1, max_pages: int = 500) -> pd.DataFrame:
+    """Scrape every residential property type for `state`, one filtered query each.
+
+    The API caps pagination at ~9,984 results per query (API_OFFSET_CAP), but each
+    property type's total is well under that — so scraping per type yields full
+    coverage where an unfiltered scrape would be truncated. Dedups by ads_id since
+    a listing can occasionally surface under more than one type.
+    """
+    frames = []
+    for pt_id, name in config.RESIDENTIAL_PROPERTY_TYPE_IDS.items():
+        logger.info(f"Scraping type {pt_id} ({name})")
+        df = scrape(state, start_page, start_page + max_pages - 1, property_type_id=pt_id)
+        logger.info(f"  {name}: {len(df)} rows")
+        if not df.empty:
+            frames.append(df)
+
+    if not frames:
+        return pd.DataFrame()
+
+    combined = pd.concat(frames, ignore_index=True)
+    if "ads_id" in combined.columns:
+        before = len(combined)
+        combined = combined.drop_duplicates(subset="ads_id").reset_index(drop=True)
+        logger.info(f"Combined {before} rows -> {len(combined)} unique after dedup")
+    return combined
+
+
 def main():
     state = input("Enter the state (URL slug, e.g. 'selangor'): ").strip()
-    start_page = int(input("Enter the starting page number: "))
-    end_page = int(input("Enter the ending page number: "))
+    all_types = input("Scrape all residential property types for full coverage? [y/N]: ").strip().lower()
 
-    df = scrape(state, start_page, end_page)
+    if all_types in ("y", "yes"):
+        start_page, end_page = 1, 500
+        df = scrape_all_types(state)
+    else:
+        start_page = int(input("Enter the starting page number: "))
+        end_page = int(input("Enter the ending page number: "))
+        df = scrape(state, start_page, end_page)
+
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     filename = config.SCRAPED_DATA_FILENAME_TEMPLATE.format(
         start=start_page, end=end_page, timestamp=timestamp, state=state or "malaysia"
