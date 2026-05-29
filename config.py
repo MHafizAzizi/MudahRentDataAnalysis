@@ -134,6 +134,14 @@ RESIDENTIAL_PROPERTY_TYPE_IDS = {
     19: "1.5-storey Terraced House",
 }
 
+# --- Availability Re-check (recheck.py) ---
+# The search API supports a per-listing lookup: GET ?list_id=<id>&fields=all returns
+# the item in `data` if live, or an empty `data` array if gone (rented/expired).
+# recheck.py uses this to track availability with a decaying check cadence.
+RECHECK_DECAY = [(7, 1), (21, 3), (None, 7)]   # (age_days_lt, interval_days); None = catch-all
+RECHECK_TERMINAL_STATUSES = {"rented", "expired"}
+AD_EXPIRY_FORMAT = "%Y-%m-%d %H:%M:%S"
+
 # --- Detail-page Enrichment ---
 # The search API never returns furnished / facilities / additional_facilities / body
 # (verified by live probe). They live only on the listing detail page, hydrated from

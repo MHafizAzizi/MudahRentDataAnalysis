@@ -215,6 +215,44 @@ def test_to_csv_row_handles_missing_optional_fields():
     assert row["address"] == "Selangor"
 
 
+@responses.activate
+def test_lookup_returns_item_for_live_listing():
+    responses.add(
+        responses.GET,
+        "https://search.mudah.my/v1/search",
+        json={"data": [{"attributes": {"list_id": 114685409}}], "meta": {}},
+        status=200,
+    )
+    data = mudah_api.lookup(114685409)
+    assert len(data) == 1
+    assert "list_id=114685409" in responses.calls[0].request.url
+
+
+@responses.activate
+def test_lookup_returns_empty_for_gone_listing():
+    responses.add(
+        responses.GET,
+        "https://search.mudah.my/v1/search",
+        json={"data": [], "meta": {}},
+        status=200,
+    )
+    assert mudah_api.lookup(999999999) == []
+
+
+@responses.activate
+def test_lookup_retries_on_403(monkeypatch):
+    monkeypatch.setattr("scripts.mudah_api.time.sleep", lambda _: None)
+    responses.add(responses.GET, "https://search.mudah.my/v1/search", status=403)
+    responses.add(
+        responses.GET,
+        "https://search.mudah.my/v1/search",
+        json={"data": [], "meta": {}},
+        status=200,
+    )
+    assert mudah_api.lookup(1) == []
+    assert len(responses.calls) == 2
+
+
 def test_geocode_query_skips_empty_parts():
     a = {"building_name": "", "subarea_name": "Shah Alam", "region_name": "Selangor"}
     assert mudah_api.geocode_query(a) == "Shah Alam, Selangor, Malaysia"

@@ -42,9 +42,60 @@ CREATE TABLE IF NOT EXISTS {config.DB_TABLE} (
     longitude             REAL,
     publishedDatetime     TEXT,
     scrape_date           TEXT,
-    adviewUrl             TEXT
+    adviewUrl             TEXT,
+    first_seen            TEXT,
+    last_checked_at       TEXT,
+    availability_status   TEXT DEFAULT 'active',
+    gone_at               TEXT,
+    check_count           INTEGER DEFAULT 0
 );
 """
+
+# Full column spec (excluding the ads_id PK), in CREATE_TABLE order. Drives both the
+# upsert column list and the schema migration for pre-existing DBs.
+COLUMN_DEFS = {
+    "subject": "TEXT",
+    "monthly_rent": "REAL",
+    "property_type": "TEXT",
+    "property_type_id": "TEXT",
+    "category_id": "TEXT",
+    "CPI": "TEXT",
+    "state": "TEXT",
+    "region": "TEXT",
+    "subarea_id": "TEXT",
+    "building_id": "TEXT",
+    "rooms": "TEXT",
+    "bathroom": "TEXT",
+    "size": "REAL",
+    "furnished": "TEXT",
+    "facilities": "TEXT",
+    "additional_facilities": "TEXT",
+    "body": "TEXT",
+    "address": "TEXT",
+    "seller_name": "TEXT",
+    "company_ad": "TEXT",
+    "ad_seller_type": "TEXT",
+    "store_verified": "TEXT",
+    "ad_expiry": "TEXT",
+    "latitude": "REAL",
+    "longitude": "REAL",
+    "publishedDatetime": "TEXT",
+    "scrape_date": "TEXT",
+    "adviewUrl": "TEXT",
+    # Recheck-managed columns (maintained by scripts/recheck.py).
+    "first_seen": "TEXT",
+    "last_checked_at": "TEXT",
+    "availability_status": "TEXT DEFAULT 'active'",
+    "gone_at": "TEXT",
+    "check_count": "INTEGER DEFAULT 0",
+}
+
+# Recheck-managed columns — kept out of the scrape upsert so it never clobbers
+# availability history.
+RECHECK_COLUMNS = {"first_seen", "last_checked_at", "availability_status", "gone_at", "check_count"}
+
+# Scrape-sourced columns, in order — the only columns the upsert writes.
+SCRAPE_COLUMNS = ['ads_id'] + [c for c in COLUMN_DEFS if c not in RECHECK_COLUMNS]
 
 CREATE_INDEXES_SQL = [
     f"CREATE INDEX IF NOT EXISTS idx_state ON {config.DB_TABLE}(state);",
@@ -53,33 +104,83 @@ CREATE_INDEXES_SQL = [
     f"CREATE INDEX IF NOT EXISTS idx_scrape_date ON {config.DB_TABLE}(scrape_date);",
     f"CREATE INDEX IF NOT EXISTS idx_ad_expiry ON {config.DB_TABLE}(ad_expiry);",
     f"CREATE INDEX IF NOT EXISTS idx_property_type_id ON {config.DB_TABLE}(property_type_id);",
+    f"CREATE INDEX IF NOT EXISTS idx_availability_status ON {config.DB_TABLE}(availability_status);",
 ]
 
 
+def ensure_schema(conn: sqlite3.Connection) -> None:
+    """Add any missing columns to an existing table, then seed recheck defaults.
+
+    Idempotent: safe to call on every load/recheck run. Fresh DBs already have all
+    columns via CREATE_TABLE_SQL; this migrates DBs created with an older schema
+    (e.g. before the scrape-field expansion or the recheck feature).
+    """
+    conn.execute(CREATE_TABLE_SQL)  # no-op if table exists; creates it otherwise
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({config.DB_TABLE})")}
+    added = [c for c in COLUMN_DEFS if c not in existing]
+    for col in added:
+        conn.execute(f"ALTER TABLE {config.DB_TABLE} ADD COLUMN {col} {COLUMN_DEFS[col]};")
+
+    if any(c in RECHECK_COLUMNS for c in added):
+        # Seed pre-existing rows: treat already-scraped listings as active,
+        # first seen on their scrape_date.
+        conn.execute(
+            f"UPDATE {config.DB_TABLE} SET first_seen = scrape_date WHERE first_seen IS NULL;"
+        )
+        conn.execute(
+            f"UPDATE {config.DB_TABLE} SET availability_status = 'active' "
+            f"WHERE availability_status IS NULL;"
+        )
+        conn.execute(
+            f"UPDATE {config.DB_TABLE} SET check_count = 0 WHERE check_count IS NULL;"
+        )
+    conn.commit()
+
+
+# Backwards-compatible alias.
+ensure_recheck_columns = ensure_schema
+
+
 def upsert_dataframe(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
-    """Insert or replace rows by ads_id. Returns number of rows upserted."""
+    """Upsert rows by ads_id, preserving recheck-managed columns. Returns row count.
+
+    On insert: first_seen = scrape_date, availability_status = 'active', check_count = 0.
+    On conflict (existing listing re-scraped): scrape columns are refreshed and the
+    listing is re-affirmed live (status -> 'active', gone_at cleared, last_checked_at
+    bumped to this scrape_date) — but first_seen and check_count are left untouched.
+    """
     if 'ads_id' not in df.columns:
         raise ValueError("DataFrame missing 'ads_id' column — cannot upsert.")
 
-    df = df.drop_duplicates(subset='ads_id')
-
-    # Align columns to DB schema, fill missing with None
-    db_cols = [
-        'ads_id', 'subject', 'monthly_rent', 'property_type', 'property_type_id',
-        'category_id', 'CPI', 'state', 'region', 'subarea_id', 'building_id',
-        'rooms', 'bathroom', 'size', 'furnished', 'facilities',
-        'additional_facilities', 'body', 'address', 'seller_name', 'company_ad',
-        'ad_seller_type', 'store_verified', 'ad_expiry',
-        'latitude', 'longitude', 'publishedDatetime', 'scrape_date', 'adviewUrl'
-    ]
-    for col in db_cols:
+    df = df.drop_duplicates(subset='ads_id').copy()
+    for col in SCRAPE_COLUMNS:
         if col not in df.columns:
             df[col] = None
-    df = df[db_cols]
+    df = df[SCRAPE_COLUMNS]
 
-    # SQLite max 999 variables — chunksize = floor(999 / num_cols)
-    chunk_size = max(1, 999 // len(db_cols))
-    df.to_sql(config.DB_TABLE, conn, if_exists='append', index=False, method='multi', chunksize=chunk_size)
+    # NaN -> None so SQLite stores NULL.
+    df = df.astype(object).where(pd.notnull(df), None)
+
+    insert_cols = SCRAPE_COLUMNS + ['first_seen']
+    placeholders = ', '.join('?' * len(insert_cols))
+    update_set = ', '.join(
+        f"{c} = excluded.{c}" for c in SCRAPE_COLUMNS if c != 'ads_id'
+    )
+    sql = (
+        f"INSERT INTO {config.DB_TABLE} ({', '.join(insert_cols)}, "
+        f"availability_status, check_count) "
+        f"VALUES ({placeholders}, 'active', 0) "
+        f"ON CONFLICT(ads_id) DO UPDATE SET "
+        f"{update_set}, "
+        f"availability_status = 'active', "
+        f"gone_at = NULL, "
+        f"last_checked_at = excluded.scrape_date"
+    )
+
+    scrape_date_idx = SCRAPE_COLUMNS.index('scrape_date')
+    rows = df.values.tolist()
+    params = [row + [row[scrape_date_idx]] for row in rows]  # first_seen = scrape_date
+    conn.executemany(sql, params)
     return len(df)
 
 
@@ -91,29 +192,16 @@ def load_processed_files():
 
     conn = sqlite3.connect(config.DB_FILE)
     conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute(CREATE_TABLE_SQL)
+    ensure_schema(conn)
     for idx_sql in CREATE_INDEXES_SQL:
         conn.execute(idx_sql)
 
-    # Enable upsert via INSERT OR REPLACE by using temp table trick
-    # Simpler: use pandas + DELETE existing then INSERT
     total_upserted = 0
 
     for csv_path in processed_files:
         try:
             df = pd.read_csv(csv_path)
-            ads_ids = df['ads_id'].dropna().astype(str).tolist()
-
-            if ads_ids:
-                # Batch DELETE to stay under SQLite 999-variable limit
-                for i in range(0, len(ads_ids), 900):
-                    batch = ads_ids[i:i + 900]
-                    placeholders = ','.join('?' * len(batch))
-                    conn.execute(
-                        f"DELETE FROM {config.DB_TABLE} WHERE ads_id IN ({placeholders})",
-                        batch
-                    )
-
+            # ON CONFLICT(ads_id) upsert preserves recheck-managed columns; no DELETE needed.
             count = upsert_dataframe(conn, df)
             conn.commit()
 

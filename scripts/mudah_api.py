@@ -25,6 +25,26 @@ def _retry_wait(resp: Optional[requests.Response], attempt: int) -> float:
     return min(config.API_BACKOFF_BASE * (2 ** attempt), config.API_RETRY_MAX_WAIT)
 
 
+def _get_json(params: Dict) -> Dict:
+    """GET the search endpoint with the given params, retrying rate limits / 5xx.
+
+    Honors Retry-After and exponential backoff. Returns the parsed JSON body.
+    """
+    headers = {"User-Agent": config.API_USER_AGENT}
+    for attempt in range(config.API_MAX_RETRIES + 1):
+        resp = requests.get(
+            config.API_BASE_URL,
+            params=params,
+            timeout=config.API_REQUEST_TIMEOUT,
+            headers=headers,
+        )
+        if resp.status_code in _RETRYABLE and attempt < config.API_MAX_RETRIES:
+            time.sleep(_retry_wait(resp, attempt))
+            continue
+        resp.raise_for_status()
+        return resp.json()
+
+
 def search(region: str, offset: int = 0, property_type_id: Optional[int] = None) -> Dict:
     """Call Mudah search API for one page of rental property listings.
 
@@ -42,20 +62,18 @@ def search(region: str, offset: int = 0, property_type_id: Optional[int] = None)
     if property_type_id is not None:
         params["property_type_id"] = str(property_type_id)
 
-    headers = {"User-Agent": config.API_USER_AGENT}
+    return _get_json(params)
 
-    for attempt in range(config.API_MAX_RETRIES + 1):
-        resp = requests.get(
-            config.API_BASE_URL,
-            params=params,
-            timeout=config.API_REQUEST_TIMEOUT,
-            headers=headers,
-        )
-        if resp.status_code in _RETRYABLE and attempt < config.API_MAX_RETRIES:
-            time.sleep(_retry_wait(resp, attempt))
-            continue
-        resp.raise_for_status()
-        return resp.json()
+
+def lookup(list_id) -> list:
+    """Return the API `data` list for a single listing id.
+
+    The search endpoint serves a per-listing lookup via `list_id`: a live listing
+    comes back as a 1-item `data` array; a gone (rented/expired) listing comes back
+    as an empty `data` array. Used by recheck.py as a cheap liveness probe.
+    """
+    body = _get_json({"list_id": str(list_id), "fields": config.API_FIELDS})
+    return body.get("data", [])
 
 
 def iter_listings(

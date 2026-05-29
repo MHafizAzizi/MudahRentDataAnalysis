@@ -60,6 +60,7 @@ MudahRentDataAnalysis/
 │   ├── discover_regions.py    # One-shot probe to enumerate REGION_CODES
 │   ├── backfill_geocode.py    # Backfill missing lat/lon in DB
 │   ├── enrich_details.py      # Optional: backfill furnished/facilities/body from detail pages
+│   ├── recheck.py             # Optional: track listing availability (active/rented/expired)
 │   └── logger.py              # Shared logging
 │
 ├── tests/
@@ -193,6 +194,23 @@ python scripts/enrich_details.py --limit 50 # cap for a test run
 - Uses `cloudscraper` (detail pages sit behind Cloudflare) with polite delays — slow, one request per listing
 - Optional, separate pass — NOT part of `run_pipeline.py`
 - Always back up the DB first: `cp data/mudah_rent.db data/mudah_rent.db.bak`
+
+### 7. Re-check availability (optional)
+
+Turns the static snapshot into time-series: which listings are still live, and whether
+a gone listing left **early (rented)** or just **expired**.
+
+```bash
+python scripts/recheck.py             # re-check all due listings
+python scripts/recheck.py --limit 50  # cap for a test run
+```
+
+- Uses the search API's per-listing lookup (`GET ?list_id=<id>` → item if live, empty if gone) — one cheap call each, no Cloudflare
+- **Decaying cadence** (`config.RECHECK_DECAY`): young listings checked daily, then every 3 days, then weekly
+- On disappearance, classifies via `ad_expiry`: gone before expiry → `rented`, at/after → `expired` (missing expiry → `expired`)
+- Maintains in-place columns: `first_seen`, `last_checked_at`, `availability_status`, `gone_at`, `check_count`
+- The loader's `ON CONFLICT` upsert preserves these across re-scrapes; `ensure_schema()` migrates older DBs by adding any missing columns
+- Optional, separate pass — NOT part of `run_pipeline.py`. Back up the DB first.
 
 ---
 
