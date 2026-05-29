@@ -42,7 +42,32 @@ A data pipeline that pulls Malaysian rental listings from the **Mudah.my public 
 - **Rate limiting:** rapid requests return HTTP 403 (not 429). `mudah_api.search()`/`lookup()` retry 403/429/5xx with backoff + `Retry-After`.
 - **KNOWN GAP (now addressed):** the search endpoint does **not** return `furnished`, `facilities`, `additional_facilities`, or `body` — these come back empty on every listing (verified across pages). They live only on the listing detail page HTML. Recovered via the optional `scripts/enrich_details.py` backfill.
 
-## What Changed (Last Session — 2026-05-29, cont.)
+## What Changed (Last Session — 2026-05-29, scrape efficiency)
+
+Branch: `feat/scrape-efficiency` (off the CLI-menu work).
+
+- **Page-size bug fixed (~8× fewer API requests).** Live-probed the property search API: a page returns **24 by default but honors `limit` up to 200** (`limit=300` → truncates to 24; `size=` is ignored). `config.API_PAGE_SIZE` was **24** and `search()` sent no `limit`, so it got 24/page while `iter_listings` could have pulled 200 — ~8× more requests than needed. Now:
+  - `config.API_PAGE_SIZE = 200`; `mudah_api.search()` sends explicit `limit=API_PAGE_SIZE`.
+  - `iter_listings` already keys offset + stop-condition off `API_PAGE_SIZE`, so it's correct (offset steps 0, 200, 400, …).
+  - Verified live: `from=0` vs `from=200` return distinct id sets, **overlap=0**.
+- **Tests:** added a `limit={API_PAGE_SIZE}` assertion to `test_search_builds_correct_url`; the two `iter_listings` tests hardcoded 24-item pages (would stop after page 1 at the new size) — rewrote them to size pages off `config.API_PAGE_SIZE`. README `API_PAGE_SIZE` row updated to 200. 73 passed, 3 skipped.
+- Came out of comparing scrape mechanics with CarData (`F:\Coding\CarData\src\eagle_client.py`), which already used `limit=200`. Other CarData diffs noted but NOT adopted (lower value): cloudscraper + rotating UA to cut 403s; per-page checkpoint + resume. Our client absorbs 403s via retry/backoff instead.
+
+## What Changed (Last Session — 2026-05-29, CLI menus)
+
+- **`1_webscrape.py` interactive CLI redesigned** (CarData-style, modelled on `F:\Coding\CarData\src\scraper.py`):
+  - **`_prompt_state()` (new)** — numbered menu of the 16 known states (sorted `REGION_CODES` slugs, 3/row). Accepts a number or a slug.
+  - **`_prompt_property_types()` (new)** — numbered menu of the 17 residential types (2/row). Accepts numbers/ranges/combos (`1,3,5` | `1-10` | `1-5,8,12-15`). Enter alone (or no valid token) = ALL types. Returns id list or `None`.
+  - **`scrape_all_types()`** — new optional `property_type_ids: Optional[List[int]]` param to scrape a subset; `None` = every residential type (unchanged default).
+  - **`main()`** rewritten to use the two pickers; always runs per-type via `scrape_all_types` (pages 1–500). **Dropped** the old y/N + page-range path.
+  - **Gotcha:** menu positions ≠ `property_type_id`s (e.g. menu 12-13 → ids 14,15). Selection is by list position, matching CarData.
+- **Per-state / per-type CSV output (CarData-style, crash-safe).** Output now lives under `data/raw/<state>/`:
+  - `scrape_all_types()` writes **one CSV per property type immediately after that type finishes** (crash-safe checkpoint — a mid-run failure keeps completed types), filename `{state}_{type_id}_{type_slug}_{ts}.csv` via `_slug()` helper. After all types: a deduped combined `{state}_ALL_{ts}.csv`. New `write_files=True` param (set False in tests/programmatic use). `main()` no longer writes — `scrape_all_types` owns all output.
+  - **`2_clean.py`** now uses `RAW_DATA_DIR.rglob('*.csv')` (recurse into state subdirs) and **skips `_ALL_` combined files** (per-type files cover every row; `3_load_to_db` upserts by `ads_id` so any cross-type overlap collapses at load). Marker: `config.SCRAPED_COMBINED_MARKER`.
+  - **Config** — added `SCRAPED_TYPE_FILENAME_TEMPLATE`, `SCRAPED_COMBINED_FILENAME_TEMPLATE`, `SCRAPED_COMBINED_MARKER`. Old `SCRAPED_DATA_FILENAME_TEMPLATE` kept (unused by `main` now).
+- Imports: added `re`, `List`. 73 passed, 3 skipped (no test changes needed — new params backward-compatible). Verified file layout + dedup + clean-discovery via smoke tests.
+
+## What Changed (Earlier — 2026-05-29, cont.)
 
 - **`scripts/recheck.py` (new)** — Availability tracking. Re-checks active listings via `mudah_api.lookup(ads_id)` on a decaying cadence (`config.RECHECK_DECAY`: <7d daily, <21d every 3d, else weekly). Gone listings classified by `ad_expiry` (`classify_gone`): before expiry → `rented`, at/after or missing → `expired`. Maintains in-place columns `first_seen`, `last_checked_at`, `availability_status`, `gone_at`, `check_count`. `--limit N` for test runs. NOT in `run_pipeline.py`. Verified live: migrated the 45k-row legacy DB and correctly flipped 5 stale rows to `expired`.
 - **`mudah_api.lookup(list_id)` (new)** — per-listing liveness probe; factored shared retry into `_get_json()`, reused by `search()`.
@@ -82,6 +107,9 @@ All handover recommendations are now implemented. Done:
 - **Capture `ad_expiry`** into schema — DONE.
 
 Possible future work (not requested):
+- CLI menus done (state + property-type pickers). If page-range / single-type scraping is ever needed again, `scrape()` still exists — re-expose via a flag.
+- Per-state/per-type CSV output done. Crash-safety granularity is per *type* (a crash mid-type loses that type's in-progress rows). Finer (per-page) checkpointing would require pushing writes into `scrape()`.
+- Old per-run flat raw CSVs (pre-subdir) still in `data/raw/` root are picked up by `2_clean.py`'s rglob — harmless, but could be archived.
 - Schedule `recheck.py` to run periodically (e.g. cron) so availability data accrues over time.
 - Backfill `ad_expiry` for the ~45k legacy rows that predate the field (they currently classify as `expired` when gone, since expiry is unknown).
 - Wire `enrich_details.py` / `recheck.py` cadence into a single maintenance command if desired.
@@ -94,7 +122,7 @@ Possible future work (not requested):
 |---|---|
 | `config.py` | Paths, API constants, `REGION_CODES` |
 | `scripts/mudah_api.py` | API client (`search`, `lookup`, `iter_listings`, `to_csv_row`, `geocode_query`) |
-| `scripts/1_webscrape.py` | Orchestrator: API → geocode → CSV |
+| `scripts/1_webscrape.py` | Orchestrator: API → geocode → CSV. Interactive: `_prompt_state` + `_prompt_property_types` pickers |
 | `scripts/2_clean.py` | Cleans raw CSVs → processed CSVs |
 | `scripts/3_load_to_db.py` | ON CONFLICT upsert → SQLite; `ensure_schema()` migrates older DBs |
 | `scripts/backfill_geocode.py` | Backfills NULL lat/lon in DB using region-level geocoding |

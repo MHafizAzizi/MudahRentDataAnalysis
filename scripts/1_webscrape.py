@@ -13,10 +13,11 @@ from scripts import mudah_api
 
 logger = get_logger("webscrape")
 
+import re
 import json
 import pandas as pd
 from tqdm import tqdm
-from typing import Tuple, Optional
+from typing import List, Tuple, Optional
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
@@ -132,25 +133,63 @@ def scrape(state: str, start_page: int, end_page: int,
     return pd.DataFrame(rows)
 
 
+def _slug(text: str) -> str:
+    """Filesystem-safe slug for a property-type name (e.g. '2.5-storey Terraced House')."""
+    s = re.sub(r"[^\w]+", "_", text.strip().lower())
+    return s.strip("_") or "type"
+
+
 def scrape_all_types(state: str, start_page: int = 1, max_pages: int = 500,
-                     skip_known: bool = True) -> pd.DataFrame:
-    """Scrape every residential property type for `state`, one filtered query each.
+                     skip_known: bool = True,
+                     property_type_ids: Optional[List[int]] = None,
+                     write_files: bool = True) -> pd.DataFrame:
+    """Scrape residential property types for `state`, one filtered query each.
 
     The API caps pagination at ~9,984 results per query (API_OFFSET_CAP), but each
     property type's total is well under that — so scraping per type yields full
     coverage where an unfiltered scrape would be truncated. Dedups by ads_id since
     a listing can occasionally surface under more than one type.
+
+    Pass property_type_ids to scrape only a subset; None = every residential type.
+
+    When write_files=True, results are saved under data/raw/<state>/:
+      - one CSV per property type, written immediately after that type finishes
+        (a crash-safe checkpoint — a mid-run failure keeps completed types), and
+      - a combined deduped CSV (<state>_ALL_<ts>.csv) once all types are done.
+    Returns the combined DataFrame (deduped by ads_id).
     """
+    if property_type_ids is None:
+        type_items = list(config.RESIDENTIAL_PROPERTY_TYPE_IDS.items())
+    else:
+        type_items = [(pid, config.RESIDENTIAL_PROPERTY_TYPE_IDS[pid])
+                      for pid in property_type_ids]
+
+    state_slug = (state or "malaysia").strip().lower()
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    out_dir = config.RAW_DATA_DIR / state_slug
+    if write_files:
+        out_dir.mkdir(parents=True, exist_ok=True)
+
     frames = []
-    for pt_id, name in config.RESIDENTIAL_PROPERTY_TYPE_IDS.items():
+    for pt_id, name in type_items:
         logger.info(f"Scraping type {pt_id} ({name})")
         df = scrape(state, start_page, start_page + max_pages - 1,
                     property_type_id=pt_id, skip_known=skip_known)
         logger.info(f"  {name}: {len(df)} rows")
-        if not df.empty:
-            frames.append(df)
+        if df.empty:
+            continue
+        frames.append(df)
+        if write_files:
+            fname = config.SCRAPED_TYPE_FILENAME_TEMPLATE.format(
+                state=state_slug, type_id=pt_id, type_slug=_slug(name),
+                timestamp=timestamp,
+            )
+            type_path = out_dir / fname
+            df.to_csv(type_path, index=False)
+            logger.info(f"  Saved {len(df)} rows -> {type_path}")
 
     if not frames:
+        logger.warning("No rows scraped for any selected type.")
         return pd.DataFrame()
 
     combined = pd.concat(frames, ignore_index=True)
@@ -158,28 +197,106 @@ def scrape_all_types(state: str, start_page: int = 1, max_pages: int = 500,
         before = len(combined)
         combined = combined.drop_duplicates(subset="ads_id").reset_index(drop=True)
         logger.info(f"Combined {before} rows -> {len(combined)} unique after dedup")
+
+    if write_files:
+        combined_path = out_dir / config.SCRAPED_COMBINED_FILENAME_TEMPLATE.format(
+            state=state_slug, timestamp=timestamp,
+        )
+        combined.to_csv(combined_path, index=False)
+        logger.info(f"Saved combined {len(combined)} rows -> {combined_path}")
+
     return combined
 
 
+def _prompt_state() -> str:
+    """Show a numbered list of known states; return the chosen URL slug."""
+    states = sorted(config.REGION_CODES)
+    col_w = max(len(s) for s in states) + 2
+    per_row = 3
+    print(f"\nAvailable states ({len(states)}):")
+    for i, slug in enumerate(states, 1):
+        label = f"{i:3}. {slug:<{col_w}}"
+        print(f"  {label}", end="\n" if i % per_row == 0 or i == len(states) else "")
+
+    while True:
+        raw = input(f"\nSelect a state 1-{len(states)} (or type its slug): ").strip().lower()
+        if raw.isdigit():
+            idx = int(raw)
+            if 1 <= idx <= len(states):
+                return states[idx - 1]
+        elif raw in config.REGION_CODES:
+            return raw
+        print(f"  ✗ invalid — enter 1-{len(states)} or a valid slug.")
+
+
+def _prompt_property_types() -> Optional[List[int]]:
+    """Show a numbered list of residential property types; return selected ids.
+
+    Accepts numbers (1,3,5), ranges (1-10), or combinations (1-5,8,12-15).
+    Press Enter alone to scrape ALL types. Returns None for all, else id list.
+    """
+    types = list(config.RESIDENTIAL_PROPERTY_TYPE_IDS.items())  # [(id, name), ...]
+    col_w = max(len(name) for _, name in types) + 2
+    per_row = 2
+    print(f"\nAvailable residential property types ({len(types)}):")
+    for i, (_pid, name) in enumerate(types, 1):
+        label = f"{i:3}. {name:<{col_w}}"
+        print(f"  {label}", end="\n" if i % per_row == 0 or i == len(types) else "")
+
+    print("\n\nSelect property types to scrape:")
+    print("  Numbers / ranges : 1,3,5  |  1-10  |  1-5,8,12-15")
+    print("  Press Enter      : scrape ALL types")
+
+    raw = input("\nSelection: ").strip().lower()
+    if not raw:
+        return None
+
+    selected: List[int] = []
+    seen: set = set()
+
+    def _add(idx: int) -> None:
+        pid = types[idx - 1][0]
+        if pid not in seen:
+            seen.add(pid)
+            selected.append(pid)
+
+    for token in (t.strip() for t in raw.split(",") if t.strip()):
+        range_m = re.match(r'^(\d+)-(\d+)$', token)
+        if range_m:
+            lo, hi = int(range_m.group(1)), int(range_m.group(2))
+            for idx in range(lo, hi + 1):
+                if 1 <= idx <= len(types):
+                    _add(idx)
+                else:
+                    print(f"  ✗ {idx} out of range (1–{len(types)})")
+        elif token.isdigit():
+            idx = int(token)
+            if 1 <= idx <= len(types):
+                _add(idx)
+            else:
+                print(f"  ✗ {idx} out of range (1–{len(types)})")
+        else:
+            print(f"  ✗ '{token}' not a number/range — skipped")
+
+    if not selected:
+        print("  No valid selection — scraping ALL types.")
+        return None
+
+    names = ", ".join(config.RESIDENTIAL_PROPERTY_TYPE_IDS[p] for p in selected)
+    print(f"\n  Selected {len(selected)} type(s): {names}")
+    return selected
+
+
 def main():
-    state = input("Enter the state (URL slug, e.g. 'selangor'): ").strip()
-    all_types = input("Scrape all residential property types for full coverage? [y/N]: ").strip().lower()
+    print("\n=== Mudah Rent Scraper ===")
+    state = _prompt_state()
+    pt_ids = _prompt_property_types()
 
-    if all_types in ("y", "yes"):
-        start_page, end_page = 1, 500
-        df = scrape_all_types(state)
-    else:
-        start_page = int(input("Enter the starting page number: "))
-        end_page = int(input("Enter the ending page number: "))
-        df = scrape(state, start_page, end_page)
-
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    filename = config.SCRAPED_DATA_FILENAME_TEMPLATE.format(
-        start=start_page, end=end_page, timestamp=timestamp, state=state or "malaysia"
-    )
-    out_path = config.RAW_DATA_DIR / filename
-    df.to_csv(out_path, index=False)
-    logger.info(f"Saved {len(df)} rows to {out_path}")
+    # scrape_all_types writes per-type checkpoints + a combined CSV under
+    # data/raw/<state>/ as it goes, so no extra write is needed here.
+    df = scrape_all_types(state, property_type_ids=pt_ids)
+    out_dir = config.RAW_DATA_DIR / (state or "malaysia").strip().lower()
+    print(f"\nDone. {len(df)} unique rows. Output dir: {out_dir}")
 
 
 if __name__ == "__main__":

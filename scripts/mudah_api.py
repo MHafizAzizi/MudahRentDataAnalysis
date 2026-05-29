@@ -57,6 +57,7 @@ def search(region: str, offset: int = 0, property_type_id: Optional[int] = None)
         "type": config.API_TYPE_RENT,
         "region": region,
         "from": offset,
+        "limit": config.API_PAGE_SIZE,
         "fields": config.API_FIELDS,
     }
     if property_type_id is not None:

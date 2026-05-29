@@ -221,7 +221,7 @@ python scripts/recheck.py --limit 50  # cap for a test run
 | `API_BASE_URL` | `https://search.mudah.my/v1/search` | Mudah search API endpoint |
 | `API_CATEGORY_PROPERTY` | `"2000"` | Parent category for properties |
 | `API_TYPE_RENT` | `"let"` | Rental filter (`sell` for sale) |
-| `API_PAGE_SIZE` | `24` | Results per API page |
+| `API_PAGE_SIZE` | `200` | Results per API page (server cap; sent as `limit`) |
 | `API_FIELDS` | `"all"` | Return every attribute |
 | `API_REQUEST_TIMEOUT` | `15` s | Per-request timeout |
 | `API_MIN_DELAY` / `API_MAX_DELAY` | `0.5` / `1.5` s | Polite delay between API pages |
