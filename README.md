@@ -1,7 +1,7 @@
 # MudahRentDataAnalysis
 
 ## Overview
-Pulls rental property listings from Mudah.my via its public JSON search API, cleans the data, stores it in a SQLite database, and visualizes it via a Streamlit dashboard.
+Pulls rental property listings from Mudah.my via its public JSON search API, cleans the data, and stores it in a SQLite database.
 
 Originally based on the HTML web-scraping approach by [Aditya Arie Wijaya](https://adtarie.net/posts/005-webscraping-machinelearning-rent-pricing/). The current implementation uses Mudah's structured search API instead — ~25× faster, no HTML parsing, no Cloudflare challenges.
 
@@ -56,9 +56,6 @@ MudahRentDataAnalysis/
 │   ├── backfill_geocode.py    # Backfill missing lat/lon in DB
 │   └── logger.py              # Shared logging
 │
-├── app/
-│   └── Streamlit.py           # Dashboard (reads from SQLite)
-│
 ├── tests/
 │   ├── conftest.py            # Shared fixtures
 │   ├── test_clean.py          # Clean function tests
@@ -86,7 +83,6 @@ MudahRentDataAnalysis/
 1_webscrape.py   →   data/raw/*.csv          (search API + geocode)
 2_clean.py       →   data/processed/*.csv    (numeric rent/size, CPI mapping)
 3_load_to_db.py  →   data/mudah_rent.db      (upsert on ads_id, batched)
-Streamlit.py     →   reads from SQLite
 ```
 
 After `3_load_to_db.py` runs:
@@ -141,20 +137,7 @@ python scripts/2_clean.py
 python scripts/3_load_to_db.py
 ```
 
-### 3. Launch dashboard
-
-```bash
-streamlit run app/Streamlit.py
-```
-
-Dashboard includes:
-- Key metrics (total listings, average rent, average size)
-- Average rent by property type and state
-- Furnishing status distribution
-- Interactive property map (lat/lon, color-coded by type)
-- Full property data table
-
-### 4. Run tests
+### 3. Run tests
 
 ```bash
 pytest -q
@@ -162,7 +145,7 @@ pytest -q
 
 API client tests use the `responses` library to mock HTTP calls — no network required.
 
-### 5. Refresh region codes (rare)
+### 4. Refresh region codes (rare)
 
 If Mudah ever rotates region IDs, regenerate them:
 
@@ -172,7 +155,7 @@ python scripts/discover_regions.py
 
 Then paste the printed `REGION_CODES = { ... }` block into `config.py`.
 
-### 6. Backfill missing lat/lon (optional)
+### 5. Backfill missing lat/lon (optional)
 
 When Nominatim can't resolve an address (or Mudah's `building_name` is empty), lat/lon may be NULL. The backfill fills these using region+state fallback:
 
@@ -218,7 +201,5 @@ See `requirements.txt`. Key packages:
 - `beautifulsoup4` — Region-discovery HTML parsing
 - `pandas` / `numpy` — Data processing
 - `geopy` — Address geocoding via Nominatim, `RateLimiter` (1 req/sec). Cached to `data/geocache.json`
-- `streamlit` — Dashboard
-- `plotly` — Charts and interactive map
 - `pytest` + `responses` — Test runner with HTTP mocking
 - `tqdm` — Progress bars

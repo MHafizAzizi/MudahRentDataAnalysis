@@ -132,7 +132,7 @@ def test_to_csv_row_handles_missing_optional_fields():
     assert row["ads_id"] == "999"
     assert row["state"] == "Selangor"
     assert row["facilities"] == ""
-    assert row["address"] == ", , Selangor"
+    assert row["address"] == "Selangor"
 
 
 def test_geocode_query_skips_empty_parts():

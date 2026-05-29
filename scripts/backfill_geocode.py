@@ -30,7 +30,7 @@ def _load_scraper():
 
 
 _scraper = _load_scraper()
-_geocode_query = _scraper._geocode_query
+_geocode = _scraper.geocode
 _load_geocache = _scraper._load_geocache
 _save_geocache = _scraper._save_geocache
 
@@ -59,7 +59,7 @@ def backfill():
 
         lat = lon = None
         for q in queries:
-            lat, lon = _geocode_query(q, cache)
+            lat, lon = _geocode(q, cache)
             if lat is not None:
                 break
 
