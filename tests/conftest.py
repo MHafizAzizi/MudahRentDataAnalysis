@@ -35,6 +35,16 @@ def webscrape_module():
     return load_script("1_webscrape.py")
 
 
+@pytest.fixture(scope="session")
+def enrich_module():
+    return load_script("enrich_details.py")
+
+
+@pytest.fixture(scope="session")
+def recheck_module():
+    return load_script("recheck.py")
+
+
 @pytest.fixture
 def sample_raw_df():
     """Sample raw DataFrame as it comes from the scraper."""

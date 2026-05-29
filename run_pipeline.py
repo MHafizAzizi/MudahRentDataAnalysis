@@ -42,6 +42,8 @@ def main():
                         help="State URL slug (e.g. 'selangor', 'kuala-lumpur'). See config.REGION_CODES.")
     parser.add_argument("--start", type=int, default=1, help="Start page number")
     parser.add_argument("--end", type=int, default=1, help="End page number")
+    parser.add_argument("--all-types", action="store_true",
+                        help="Scrape every residential property type (full coverage past the ~10k depth cap). Ignores --start/--end.")
     parser.add_argument("--skip-scrape", action="store_true", help="Skip scraping, run clean+load only")
     args = parser.parse_args()
 
@@ -52,11 +54,14 @@ def main():
         from datetime import datetime
         scraper = load_script(Path("1_webscrape.py"))
 
-        df = scraper.scrape(
-            state=args.state,
-            start_page=args.start,
-            end_page=args.end,
-        )
+        if args.all_types:
+            df = scraper.scrape_all_types(state=args.state)
+        else:
+            df = scraper.scrape(
+                state=args.state,
+                start_page=args.start,
+                end_page=args.end,
+            )
 
         if df.empty:
             print("No data scraped. Exiting.")

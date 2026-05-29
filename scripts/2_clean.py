@@ -54,7 +54,7 @@ def clean_rental_data(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def create_mapping_dict(mapping_df: pd.DataFrame) -> dict:
-    result = {}
+    mapping_dict = {}
     valid = mapping_df.dropna(subset=["Mudah Property Type", "Standardized Property Type"])
     for _, row in valid.iterrows():
         std_type = str(row["Standardized Property Type"])
@@ -62,8 +62,8 @@ def create_mapping_dict(mapping_df: pd.DataFrame) -> dict:
         for t in mudah_type.split("\n"):
             t = t.strip()
             if t:
-                result[t] = std_type
-    return result
+                mapping_dict[t] = std_type
+    return mapping_dict
 
 
 def clean_raw_files():
