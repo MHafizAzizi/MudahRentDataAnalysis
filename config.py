@@ -82,6 +82,15 @@ LOG_DIR.mkdir(exist_ok=True)
 # Output filename format for scraped data
 SCRAPED_DATA_FILENAME_TEMPLATE = "Scraped_Data_Page{start}to{end}({timestamp})({state}).csv"
 
+# Per-state / per-type output layout (data/raw/<state>/).
+# Per-type files are written incrementally as each type finishes (crash-safe
+# checkpoints). The combined file (_ALL_) is a deduped convenience snapshot.
+# 2_clean.py processes the per-type files and SKIPS _ALL_ files to avoid
+# double-counting (3_load_to_db upserts by ads_id, collapsing any overlap).
+SCRAPED_TYPE_FILENAME_TEMPLATE = "{state}_{type_id}_{type_slug}_{timestamp}.csv"
+SCRAPED_COMBINED_FILENAME_TEMPLATE = "{state}_ALL_{timestamp}.csv"
+SCRAPED_COMBINED_MARKER = "_ALL_"
+
 # Datetime format for parsing
 DATETIME_FORMAT = "%m/%d/%Y"
 
@@ -89,7 +98,9 @@ DATETIME_FORMAT = "%m/%d/%Y"
 API_BASE_URL = "https://search.mudah.my/v1/search"
 API_CATEGORY_PROPERTY = "2000"
 API_TYPE_RENT = "let"
-API_PAGE_SIZE = 24
+API_PAGE_SIZE = 200  # Server caps a page at 200 (live-probed); >200 silently truncates.
+                     # Was 24 — the API ignored it and returned 200 anyway, so paging by
+                     # 24 re-fetched the same rows ~8x. Sending limit + paging by 200 fixes it.
 API_FIELDS = "all"
 API_REQUEST_TIMEOUT = 15
 API_MIN_DELAY = 0.5  # seconds between API calls (polite)

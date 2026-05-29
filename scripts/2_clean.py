@@ -70,7 +70,13 @@ def clean_raw_files():
     mapping_df = pd.read_csv(config.MAPPING_FILE)
     mapping_dict = create_mapping_dict(mapping_df)
 
-    raw_files = list(config.RAW_DATA_DIR.glob('*.csv'))
+    # Recurse into per-state subdirs (data/raw/<state>/). Skip combined _ALL_
+    # snapshots — the per-type files already cover every row, and processing
+    # both would double-count. (3_load_to_db upserts by ads_id regardless.)
+    raw_files = [
+        p for p in config.RAW_DATA_DIR.rglob('*.csv')
+        if config.SCRAPED_COMBINED_MARKER not in p.name
+    ]
     if not raw_files:
         logger.warning("No raw CSV files found.")
         return

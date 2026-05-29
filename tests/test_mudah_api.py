@@ -4,6 +4,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 import responses
+import config
 from scripts import mudah_api
 
 
@@ -21,6 +22,7 @@ def test_search_builds_correct_url():
     assert "type=let" in call.request.url
     assert "region=8" in call.request.url
     assert "from=0" in call.request.url
+    assert f"limit={config.API_PAGE_SIZE}" in call.request.url
     assert "fields=all" in call.request.url
 
 
@@ -124,35 +126,37 @@ def test_search_returns_data_list():
 @responses.activate
 def test_iter_listings_paginates_until_exhausted(monkeypatch):
     monkeypatch.setattr("scripts.mudah_api.time.sleep", lambda _: None)
+    n = config.API_PAGE_SIZE
     page1 = {
-        "data": [{"id": i, "attributes": {"list_id": i}} for i in range(24)],
-        "meta": {"total-results": 30, "total-showing": 24},
+        "data": [{"id": i, "attributes": {"list_id": i}} for i in range(n)],
+        "meta": {"total-results": n + 6, "total-showing": n},
     }
     page2 = {
-        "data": [{"id": i, "attributes": {"list_id": i}} for i in range(24, 30)],
-        "meta": {"total-results": 30, "total-showing": 6},
+        "data": [{"id": i, "attributes": {"list_id": i}} for i in range(n, n + 6)],
+        "meta": {"total-results": n + 6, "total-showing": 6},
     }
     responses.add(responses.GET, "https://search.mudah.my/v1/search", json=page1, status=200)
     responses.add(responses.GET, "https://search.mudah.my/v1/search", json=page2, status=200)
 
     items = list(mudah_api.iter_listings(region="8", max_pages=10))
-    assert len(items) == 30
+    assert len(items) == n + 6
     assert items[0]["attributes"]["list_id"] == 0
-    assert items[29]["attributes"]["list_id"] == 29
+    assert items[-1]["attributes"]["list_id"] == n + 5
 
 
 @responses.activate
 def test_iter_listings_respects_max_pages(monkeypatch):
     monkeypatch.setattr("scripts.mudah_api.time.sleep", lambda _: None)
+    n = config.API_PAGE_SIZE
     page = {
-        "data": [{"id": i, "attributes": {"list_id": i}} for i in range(24)],
-        "meta": {"total-results": 1000, "total-showing": 24},
+        "data": [{"id": i, "attributes": {"list_id": i}} for i in range(n)],
+        "meta": {"total-results": 1000, "total-showing": n},
     }
     responses.add(responses.GET, "https://search.mudah.my/v1/search", json=page, status=200)
     responses.add(responses.GET, "https://search.mudah.my/v1/search", json=page, status=200)
 
     items = list(mudah_api.iter_listings(region="8", max_pages=2))
-    assert len(items) == 48
+    assert len(items) == 2 * n
 
 
 def test_to_csv_row_maps_all_fields():
