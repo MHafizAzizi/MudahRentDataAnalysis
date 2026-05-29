@@ -44,5 +44,5 @@ data/geocache.json
 .coverage
 htmlcov/
 
-# Streamlit
-.streamlit/
+# Claude Code session/agent state
+.claude/
