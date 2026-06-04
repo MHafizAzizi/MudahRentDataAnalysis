@@ -164,8 +164,6 @@ def test_to_csv_row_maps_all_fields():
         "id": 111945973,
         "attributes": {
             "list_id": 111945973,
-            "subject": "2br near LRT",
-            "body": "Fully furnished",
             "price_label": "RM 2,000",
             "monthly_rent": 2000,
             "property_type_name": "Service Residence",
@@ -177,9 +175,6 @@ def test_to_csv_row_maps_all_fields():
             "bathroom_name": "1",
             "size": "719",
             "size_suffix": "sq.ft.",
-            "furnished_name": "Fully Furnished",
-            "facilities_name": ["Swimming Pool", "Gym"],
-            "additional_facilities_name": ["Air-Cond"],
             "published_date": "2026-05-02 20:10:31",
             "adview_url": "https://www.mudah.my/...",
         },
@@ -194,10 +189,6 @@ def test_to_csv_row_maps_all_fields():
     assert row["rooms"] == "2"
     assert row["bathroom"] == "1"
     assert row["size"] == "719 sq.ft."
-    assert row["furnished"] == "Fully Furnished"
-    assert row["facilities"] == "Swimming Pool, Gym"
-    assert row["additional_facilities"] == "Air-Cond"
-    assert row["body"] == "Fully furnished"
     assert row["address"] == "Hill10 Residence, Shah Alam, Selangor"
     assert row["publishedDatetime"] == "2026-05-02 20:10:31"
     assert row["adviewUrl"] == "https://www.mudah.my/..."
@@ -208,14 +199,12 @@ def test_to_csv_row_handles_missing_optional_fields():
         "id": 999,
         "attributes": {
             "list_id": 999,
-            "subject": "minimal",
             "region_name": "Selangor",
         },
     }
     row = mudah_api.to_csv_row(api_item)
     assert row["ads_id"] == "999"
     assert row["state"] == "Selangor"
-    assert row["facilities"] == ""
     assert row["address"] == "Selangor"
 
 

@@ -42,7 +42,20 @@ A data pipeline that pulls Malaysian rental listings from the **Mudah.my public 
 - **Rate limiting:** rapid requests return HTTP 403 (not 429). `mudah_api.search()`/`lookup()` retry 403/429/5xx with backoff + `Retry-After`.
 - **KNOWN GAP (now addressed):** the search endpoint does **not** return `furnished`, `facilities`, `additional_facilities`, or `body` — these come back empty on every listing (verified across pages). They live only on the listing detail page HTML. Recovered via the optional `scripts/enrich_details.py` backfill.
 
-## What Changed (Last Session — 2026-05-29, scrape efficiency)
+## What Changed (Last Session — 2026-06-04, column removal)
+
+Branch: `feat/scrape-efficiency`.
+
+- **Dropped 6 columns** from DB + scrape pipeline: `furnished`, `facilities`, `additional_facilities`, `body`, `subject`, `building_id`. (`building_id` ≠ `building_name`; address still built from `building_name`.)
+  - DB: `ALTER TABLE ... DROP COLUMN` ×6 (SQLite 3.50.4), then `VACUUM` — 84MB → 44MB. Backup: `data/mudah_rent_pre_coldrop_20260604_142730.db`.
+  - `3_load_to_db.py`: removed from `CREATE_TABLE_SQL` + `COLUMN_DEFS`. **Removed `furnished` from `_DEDUP_COLS`** (would've thrown `no such column` at every load otherwise).
+  - `mudah_api.py`: removed 6 keys from `to_csv_row()`.
+  - `config.py`: trimmed `PROPERTY_ATTRIBUTES`; **removed `ENRICH_*` block** (`ENRICH_FIELDS`/`ENRICH_MIN_DELAY`/`ENRICH_MAX_DELAY`/`ENRICH_REQUEST_TIMEOUT`).
+- **Deleted `scripts/enrich_details.py`** + `tests/test_enrich.py` + `enrich_module` conftest fixture. Enrich's sole purpose was backfilling the 4 detail-only fields — now dead.
+- Tests: trimmed assertions in `test_mudah_api.py`, removed `furnished` from `sample_raw_df`. **66 passed, 3 skipped** (was 73; −7 enrich tests).
+- Old CSVs under `data/raw|old|archived/` keep the old headers — harmless (extra cols ignored at load; upsert writes only `SCRAPE_COLUMNS`).
+
+## What Changed (Earlier — 2026-05-29, scrape efficiency)
 
 Branch: `feat/scrape-efficiency` (off the CLI-menu work).
 
@@ -114,6 +127,24 @@ Possible future work (not requested):
 - Backfill `ad_expiry` for the ~45k legacy rows that predate the field (they currently classify as `expired` when gone, since expiry is unknown).
 - Wire `enrich_details.py` / `recheck.py` cadence into a single maintenance command if desired.
 
+### Data quality issues (found 2026-05-29 DB analysis, 93,629 rows)
+
+- **Rooms normalization** — `rooms` stored as both `"3"` and `"3.0"` (integer vs float string), creates duplicate groups in analysis. Fix in `2_clean.py`: cast rooms to int during clean step.
+- **33% missing geocodes** — 30,546 rows have `latitude IS NULL`. Run `scripts/backfill_geocode.py` to fill.
+- ~~**71% missing furnished**~~ — RESOLVED 2026-06-04 by dropping the `furnished` column entirely (plus `facilities`/`additional_facilities`/`body`/`subject`/`building_id`). `enrich_details.py` deleted.
+- **Kedah avg rent anomaly** — avg RM3,999 vs national avg RM2,493, despite only 3,387 listings. Likely commercial/warehouse listings inflating the mean. Filter to residential-only before state comparisons.
+
+### Faster recheck (Option 1 — rescrape-diff, not yet implemented)
+
+Current `recheck.py` does 90,633 per-listing `lookup()` calls sequentially (~25h at 1s/call).
+
+**Proposed `scripts/bulk_recheck.py`:**
+1. Run `scrape_all_types()` for all 16 states → fresh `ads_id` set (~2–4h, normal scrape speed).
+2. DB active ids NOT in fresh set → `lookup()` to confirm gone + classify via `ad_expiry` (only the delta, likely ~10% = ~9k calls).
+3. DB active ids IN fresh set → bulk `UPDATE last_checked_at` (no per-listing API calls).
+
+Result: ~3–6h total vs ~25h. False positives (listing past depth cap → appears absent) are caught by the `lookup()` step automatically. Needs new script; existing `scrape_all_types()` and `mudah_api.lookup()` are reused unchanged.
+
 ---
 
 ## Key Files
@@ -126,7 +157,6 @@ Possible future work (not requested):
 | `scripts/2_clean.py` | Cleans raw CSVs → processed CSVs |
 | `scripts/3_load_to_db.py` | ON CONFLICT upsert → SQLite; `ensure_schema()` migrates older DBs |
 | `scripts/backfill_geocode.py` | Backfills NULL lat/lon in DB using region-level geocoding |
-| `scripts/enrich_details.py` | Optional backfill: furnished/facilities/additional_facilities/body from detail-page HTML |
 | `scripts/recheck.py` | Optional: availability tracking (active/rented/expired) via per-listing API lookup |
 | `scripts/discover_regions.py` | One-shot: enumerate Mudah region IDs |
 | `tests/test_mudah_api.py` | API client + transformer tests (HTTP mocked) |

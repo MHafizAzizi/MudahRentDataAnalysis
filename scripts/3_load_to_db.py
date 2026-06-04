@@ -15,7 +15,6 @@ import shutil
 CREATE_TABLE_SQL = f"""
 CREATE TABLE IF NOT EXISTS {config.DB_TABLE} (
     ads_id                TEXT PRIMARY KEY,
-    subject               TEXT,
     monthly_rent          REAL,
     property_type         TEXT,
     property_type_id      TEXT,
@@ -24,14 +23,9 @@ CREATE TABLE IF NOT EXISTS {config.DB_TABLE} (
     state                 TEXT,
     region                TEXT,
     subarea_id            TEXT,
-    building_id           TEXT,
     rooms                 TEXT,
     bathroom              TEXT,
     size                  REAL,
-    furnished             TEXT,
-    facilities            TEXT,
-    additional_facilities TEXT,
-    body                  TEXT,
     address               TEXT,
     seller_name           TEXT,
     company_ad            TEXT,
@@ -54,7 +48,6 @@ CREATE TABLE IF NOT EXISTS {config.DB_TABLE} (
 # Full column spec (excluding ads_id PK), in CREATE_TABLE order. Drives the schema
 # migration for pre-existing DBs (ensure_schema).
 COLUMN_DEFS = {
-    "subject": "TEXT",
     "monthly_rent": "REAL",
     "property_type": "TEXT",
     "property_type_id": "TEXT",
@@ -63,14 +56,9 @@ COLUMN_DEFS = {
     "state": "TEXT",
     "region": "TEXT",
     "subarea_id": "TEXT",
-    "building_id": "TEXT",
     "rooms": "TEXT",
     "bathroom": "TEXT",
     "size": "REAL",
-    "furnished": "TEXT",
-    "facilities": "TEXT",
-    "additional_facilities": "TEXT",
-    "body": "TEXT",
     "address": "TEXT",
     "seller_name": "TEXT",
     "company_ad": "TEXT",
@@ -107,7 +95,7 @@ CREATE_INDEXES_SQL = [
 ]
 
 # Columns used for content-deduplication (same listing posted multiple times).
-_DEDUP_COLS = "monthly_rent, property_type, state, region, rooms, bathroom, size, furnished, address, publishedDatetime"
+_DEDUP_COLS = "monthly_rent, property_type, state, region, rooms, bathroom, size, address, publishedDatetime"
 
 
 def _dedup(conn: sqlite3.Connection) -> int:
@@ -223,8 +211,10 @@ def load_processed_files():
 
             shutil.move(str(csv_path), str(config.ARCHIVED_DATA_DIR / csv_path.name))
 
-            raw_file = config.RAW_DATA_DIR / csv_path.name
-            if raw_file.exists():
+            # Raw file lives in a per-state subdir (data/raw/<state>/<name>.csv).
+            # Search recursively so we find it regardless of nesting depth.
+            raw_file = next(config.RAW_DATA_DIR.rglob(csv_path.name), None)
+            if raw_file:
                 shutil.move(str(raw_file), str(config.OLD_RAW_DIR / csv_path.name))
 
             logger.info(f"Loaded {count} rows from {csv_path.name} → archived. Raw → old/raw.")
@@ -241,6 +231,17 @@ def load_processed_files():
 
     conn.close()
     logger.info(f"Done. Total rows upserted: {total_upserted}. DB: {config.DB_FILE}")
+
+    # Sweep combined _ALL_ files from raw subdirs — skipped by 2_clean.py so they
+    # never get a processed file and would otherwise accumulate indefinitely.
+    all_files = [
+        p for p in config.RAW_DATA_DIR.rglob('*.csv')
+        if config.SCRAPED_COMBINED_MARKER in p.name
+    ]
+    for p in all_files:
+        dest = config.OLD_RAW_DIR / p.name
+        shutil.move(str(p), str(dest))
+        logger.info(f"Swept combined file → old/raw: {p.name}")
 
 
 if __name__ == "__main__":
