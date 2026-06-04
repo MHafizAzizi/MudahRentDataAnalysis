@@ -129,7 +129,6 @@ def to_csv_row(item: Dict) -> Dict[str, str]:
 
     return {
         "ads_id": str(a.get("list_id", "")),
-        "subject": _join(a.get("subject")),
         "monthly_rent": monthly_rent,
         "property_type": _join(a.get("property_type_name")),
         "property_type_id": str(a.get("property_type_id", "")),
@@ -137,14 +136,9 @@ def to_csv_row(item: Dict) -> Dict[str, str]:
         "state": _join(a.get("region_name")),
         "region": _join(a.get("subarea_name")),
         "subarea_id": str(a.get("subarea_id", "")),
-        "building_id": str(a.get("building_id", "")),
         "rooms": _join(a.get("rooms_name")),
         "bathroom": _join(a.get("bathroom_name")),
         "size": size_str,
-        "furnished": _join(a.get("furnished_name")),
-        "facilities": _join(a.get("facilities_name")),
-        "additional_facilities": _join(a.get("additional_facilities_name")),
-        "body": _join(a.get("body")),
         "address": address,
         "seller_name": _join(a.get("name")),
         "company_ad": str(a.get("company_ad", "")),

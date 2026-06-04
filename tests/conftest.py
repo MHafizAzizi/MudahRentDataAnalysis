@@ -36,11 +36,6 @@ def webscrape_module():
 
 
 @pytest.fixture(scope="session")
-def enrich_module():
-    return load_script("enrich_details.py")
-
-
-@pytest.fixture(scope="session")
 def recheck_module():
     return load_script("recheck.py")
 
@@ -56,7 +51,6 @@ def sample_raw_df():
         'property_type': ['Apartment', 'Condominium', 'Others', None],
         'publishedDatetime': ['2025-01-01 10:00', '2025-02-15 12:30', None, 'bad-date'],
         'state': ['Selangor', 'Kuala Lumpur', None, 'Penang'],
-        'furnished': ['Fully Furnished', 'Not Furnished', None, 'Partly Furnished'],
     })
 
 

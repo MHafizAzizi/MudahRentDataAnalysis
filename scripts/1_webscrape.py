@@ -208,8 +208,11 @@ def scrape_all_types(state: str, start_page: int = 1, max_pages: int = 500,
     return combined
 
 
-def _prompt_state() -> str:
-    """Show a numbered list of known states; return the chosen URL slug."""
+def _prompt_state() -> Optional[List[str]]:
+    """Show a numbered list of known states; return list of chosen URL slugs.
+
+    Press Enter alone to scrape ALL states. Returns None for all, else [slug, ...].
+    """
     states = sorted(config.REGION_CODES)
     col_w = max(len(s) for s in states) + 2
     per_row = 3
@@ -218,15 +221,20 @@ def _prompt_state() -> str:
         label = f"{i:3}. {slug:<{col_w}}"
         print(f"  {label}", end="\n" if i % per_row == 0 or i == len(states) else "")
 
+    print("\n  Press Enter      : scrape ALL states")
+
     while True:
         raw = input(f"\nSelect a state 1-{len(states)} (or type its slug): ").strip().lower()
+        if not raw:
+            print(f"  Scraping ALL {len(states)} states.")
+            return None
         if raw.isdigit():
             idx = int(raw)
             if 1 <= idx <= len(states):
-                return states[idx - 1]
+                return [states[idx - 1]]
         elif raw in config.REGION_CODES:
-            return raw
-        print(f"  ✗ invalid — enter 1-{len(states)} or a valid slug.")
+            return [raw]
+        print(f"  ✗ invalid — enter 1-{len(states)}, a valid slug, or Enter for all.")
 
 
 def _prompt_property_types() -> Optional[List[int]]:
@@ -289,14 +297,26 @@ def _prompt_property_types() -> Optional[List[int]]:
 
 def main():
     print("\n=== Mudah Rent Scraper ===")
-    state = _prompt_state()
+    states = _prompt_state()  # None = all, [slug] = one
     pt_ids = _prompt_property_types()
 
-    # scrape_all_types writes per-type checkpoints + a combined CSV under
-    # data/raw/<state>/ as it goes, so no extra write is needed here.
-    df = scrape_all_types(state, property_type_ids=pt_ids)
-    out_dir = config.RAW_DATA_DIR / (state or "malaysia").strip().lower()
-    print(f"\nDone. {len(df)} unique rows. Output dir: {out_dir}")
+    all_states = sorted(config.REGION_CODES) if states is None else states
+    total_rows = 0
+
+    for i, state in enumerate(all_states, 1):
+        if len(all_states) > 1:
+            print(f"\n[{i}/{len(all_states)}] Scraping state: {state}")
+        # scrape_all_types writes per-type checkpoints + a combined CSV under
+        # data/raw/<state>/ as it goes, so no extra write is needed here.
+        df = scrape_all_types(state, property_type_ids=pt_ids)
+        out_dir = config.RAW_DATA_DIR / state.strip().lower()
+        total_rows += len(df)
+        print(f"  {state}: {len(df)} unique rows → {out_dir}")
+
+    if len(all_states) > 1:
+        print(f"\nDone. {total_rows} total unique rows across {len(all_states)} states.")
+    else:
+        print(f"\nDone. {total_rows} unique rows.")
 
 
 if __name__ == "__main__":
