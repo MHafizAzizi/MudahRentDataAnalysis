@@ -16,14 +16,12 @@ GET https://search.mudah.my/v1/search
     ?category=2000             # properties (parent category)
     &type=let                  # rental (vs. 'sell')
     &region=<id>               # 1..17, one per Malaysian state (see config.REGION_CODES)
-    &from=<offset>             # pagination offset (24 per page)
+    &from=<offset>             # pagination offset (200 per page; sent as limit)
     &fields=all                # broadest field set the search endpoint serves
     &property_type_id=<id>     # optional: filter by type (see config.RESIDENTIAL_PROPERTY_TYPE_IDS)
 ```
 
-A single request returns up to 24 listings with structured attributes: `monthly_rent`, `property_type_name`, `property_type_id`, `category_name`, `rooms_name`, `bathroom_name`, `size`, `building_name`, `subarea_name`, `region_name`, `date`, `ad_expiry`, `adview_url`, … — no HTML parsing.
-
-> **Search endpoint does NOT return** `furnished`, `facilities`, `additional_facilities`, or `body`. These exist only on the per-listing detail page; the scraper emits empty values for them. Recover them with the optional `scripts/enrich_details.py` backfill (fetches each detail page's `__NEXT_DATA__` blob — see below).
+A single request returns up to 200 listings with structured attributes: `monthly_rent`, `property_type_name`, `property_type_id`, `category_name`, `rooms_name`, `bathroom_name`, `size`, `building_name`, `subarea_name`, `region_name`, `date`, `ad_expiry`, `adview_url`, … — no HTML parsing.
 
 **Depth cap:** the API returns an empty `data` array at offset ≥ ~9,984, no matter how many `total-results` it reports. To get full coverage of a large region, filter by `property_type_id` — each type has its own depth window. `iter_listings`/`scrape` accept `property_type_id`, and `scrape_all_types()` loops every residential type.
 
@@ -59,7 +57,6 @@ MudahRentDataAnalysis/
 │   ├── mudah_api.py           # Mudah search API client + transformer
 │   ├── discover_regions.py    # One-shot probe to enumerate REGION_CODES
 │   ├── backfill_geocode.py    # Backfill missing lat/lon in DB
-│   ├── enrich_details.py      # Optional: backfill furnished/facilities/body from detail pages
 │   ├── recheck.py             # Optional: track listing availability (active/rented/expired)
 │   └── logger.py              # Shared logging
 │
@@ -178,24 +175,7 @@ python scripts/backfill_geocode.py
 - Reuses `data/geocache.json`
 - Always backup the DB before running: `cp data/mudah_rent.db data/mudah_rent.db.bak`
 
-### 6. Enrich detail-only fields (optional)
-
-`furnished`, `facilities`, `additional_facilities`, and `body` are NOT in the search
-API response — only on each listing's detail page. This backfill fetches those pages
-and fills the columns:
-
-```bash
-python scripts/enrich_details.py            # all rows missing those fields
-python scripts/enrich_details.py --limit 50 # cap for a test run
-```
-
-- Selects DB rows that have an `adviewUrl` but are missing any enrichment field
-- Parses the detail page's `__NEXT_DATA__` JSON (`furnished`/`facilities`/`additional_facilities` from `categoryParams`, `body` from attributes)
-- Uses `cloudscraper` (detail pages sit behind Cloudflare) with polite delays — slow, one request per listing
-- Optional, separate pass — NOT part of `run_pipeline.py`
-- Always back up the DB first: `cp data/mudah_rent.db data/mudah_rent.db.bak`
-
-### 7. Re-check availability (optional)
+### 6. Re-check availability (optional)
 
 Turns the static snapshot into time-series: which listings are still live, and whether
 a gone listing left **early (rented)** or just **expired**.
