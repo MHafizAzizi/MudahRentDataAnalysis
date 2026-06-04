@@ -16,7 +16,7 @@ A data pipeline that pulls Malaysian rental listings from the **Mudah.my public 
 
 ## Current Branch
 
-`feat/api-scraper` — API-based scraper rewrite. Not yet merged to `main`.
+`feat/scrape-efficiency` — page-size fix, CLI menus, column removal, repo cleanup. **PR #17 open** (→ `main`), not yet merged.
 
 ---
 
@@ -54,6 +54,12 @@ Branch: `feat/scrape-efficiency`.
 - **Deleted `scripts/enrich_details.py`** + `tests/test_enrich.py` + `enrich_module` conftest fixture. Enrich's sole purpose was backfilling the 4 detail-only fields — now dead.
 - Tests: trimmed assertions in `test_mudah_api.py`, removed `furnished` from `sample_raw_df`. **66 passed, 3 skipped** (was 73; −7 enrich tests).
 - Old CSVs under `data/raw|old|archived/` keep the old headers — harmless (extra cols ignored at load; upsert writes only `SCRAPE_COLUMNS`).
+
+**Repo cleanup + PR (same session):**
+- Added **`.gitignore`** (was empty): pycache, `.pytest_cache`, logs, `data/*.db` + backups, pipeline artifacts (`raw/processed/archived/old/`, `geocache.json`); keeps `data/mapping.csv`. Commit `276039e`.
+- Deleted ~338MB junk: old DB backups (`.bak`, `backup_pre_dedup` May 7), `data/old/` (147MB), `data/archived/` (66MB), all `__pycache__`, stale git worktrees. **Kept** `data/mudah_rent_pre_coldrop_20260604_142730.db` (81MB) as column-drop rollback. Loader recreates `archived/old/` dirs on `config.py` import (mkdir exist_ok) — no breakage.
+- Installed **GitHub CLI** (`winget GitHub.cli`, v2.93.0, `C:\Program Files\GitHub CLI\gh.exe`), authed as MHafizAzizi. Not on Bash PATH — call via full path or PowerShell.
+- Opened **PR #17**: https://github.com/MHafizAzizi/MudahRentDataAnalysis/pull/17 (`feat/scrape-efficiency` → `main`, 4 commits).
 
 ## What Changed (Earlier — 2026-05-29, scrape efficiency)
 
