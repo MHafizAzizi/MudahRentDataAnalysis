@@ -32,6 +32,20 @@ def clean_size(size):
         return np.nan
 
 
+def clean_rooms(rooms):
+    # Normalize mixed int/float strings ("3" vs "3.0") to a canonical int
+    # string. Non-numeric labels (e.g. "More than 10") pass through unchanged.
+    try:
+        if pd.isna(rooms):
+            return np.nan
+        s = str(rooms).strip()
+        if not s:
+            return np.nan
+        return str(int(float(s)))
+    except (ValueError, TypeError):
+        return str(rooms).strip()
+
+
 def clean_rental_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df = df.dropna(how='all')
@@ -44,6 +58,9 @@ def clean_rental_data(df: pd.DataFrame) -> pd.DataFrame:
 
     if 'size' in df.columns:
         df['size'] = df['size'].apply(clean_size)
+
+    if 'rooms' in df.columns:
+        df['rooms'] = df['rooms'].apply(clean_rooms)
 
     if 'publishedDatetime' in df.columns:
         df['publishedDatetime'] = pd.to_datetime(

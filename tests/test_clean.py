@@ -46,6 +46,26 @@ class TestCleanSize:
         assert clean_module.clean_size(900.0) == 900.0
 
 
+class TestCleanRooms:
+    def test_int_string_unchanged(self, clean_module):
+        assert clean_module.clean_rooms("3") == "3"
+
+    def test_float_string_to_int(self, clean_module):
+        assert clean_module.clean_rooms("3.0") == "3"
+
+    def test_numeric_input(self, clean_module):
+        assert clean_module.clean_rooms(4.0) == "4"
+
+    def test_non_numeric_passthrough(self, clean_module):
+        assert clean_module.clean_rooms("More than 10") == "More than 10"
+
+    def test_none_returns_nan(self, clean_module):
+        assert np.isnan(clean_module.clean_rooms(None))
+
+    def test_empty_string_returns_nan(self, clean_module):
+        assert np.isnan(clean_module.clean_rooms(""))
+
+
 class TestCleanRentalData:
     def test_monthly_rent_cleaned(self, clean_module, sample_raw_df):
         result = clean_module.clean_rental_data(sample_raw_df)
