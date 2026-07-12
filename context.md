@@ -90,7 +90,7 @@ At the end of each session:
 
 ## Last Session — 2026-07-12
 
-Ponytail audit applied, then committed as PR #20 (`testing` → `main`, merged). Tests: 72 passed, 3 skipped.
+Ponytail audit applied, then committed and pushed as PR #20 (`testing` → `main`). Tests: 72 passed, 3 skipped.
 - Renamed `1_webscrape.py`/`2_clean.py`/`3_load_to_db.py` → `scrape.py`/`clean.py`/`load_to_db.py`; replaced all `importlib` loaders (run_pipeline, recheck, backfill_geocode, conftest) with plain imports.
 - Deleted `discover_regions.py` (one-shot, already ran) and dropped its deps `cloudscraper` + `beautifulsoup4`; also dropped redundant `numpy` pin (pandas dependency).
 - Deleted dead HTML-scraper config (`BASE_URL`, `SCRAPER_CONFIG`, `MIN_DELAY`/`MAX_DELAY`/`BASE_SLEEP_TIME`, `PROPERTY_ATTRIBUTES`, `EXCLUDED_CATEGORIES`) and `SCRAPED_DATA_FILENAME_TEMPLATE`.
