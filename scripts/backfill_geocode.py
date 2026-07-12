@@ -7,32 +7,17 @@ Strategy:
 - Update DB in batches.
 """
 import sys
-import importlib.util
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
 from scripts.logger import get_logger
+from scripts.scrape import geocode as _geocode, _load_geocache, _save_geocache
 
 logger = get_logger("backfill_geocode")
 
 import sqlite3
 from tqdm import tqdm
-
-
-def _load_scraper():
-    """Load scripts/1_webscrape.py via importlib (filename starts with digit)."""
-    path = Path(__file__).parent / "1_webscrape.py"
-    spec = importlib.util.spec_from_file_location("webscrape_module", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_scraper = _load_scraper()
-_geocode = _scraper.geocode
-_load_geocache = _scraper._load_geocache
-_save_geocache = _scraper._save_geocache
 
 
 def backfill():

@@ -31,9 +31,9 @@ A single request returns up to 200 listings with structured attributes: `monthly
 - `to_csv_row(item)` — maps an API item to the project's CSV schema
 - `geocode_query(attributes)` — composes `building, subarea, region, Malaysia` for Nominatim
 
-`scripts/1_webscrape.py` orchestrates: pull listings → transform → geocode each via `geopy`/Nominatim (cached in `data/geocache.json`) → write CSV.
+`scripts/scrape.py` orchestrates: pull listings → transform → geocode each via `geopy`/Nominatim (cached in `data/geocache.json`) → write CSV.
 
-`scripts/discover_regions.py` is a one-shot script that enumerates region codes by inspecting each state's listing page `__NEXT_DATA__.initialQuery`. It populates `config.REGION_CODES`.
+`config.REGION_CODES` was populated by a one-shot probe of each state's listing page `__NEXT_DATA__.initialQuery` (`scripts/discover_regions.py`, since deleted — see git history if the IDs ever need regenerating).
 
 ### Trade-offs vs. HTML scraping
 - **Pro:** ~25× faster (1 page Selangor: 12s vs 5min). No Cloudflare 403s. Cleaner structured data.
@@ -51,11 +51,10 @@ MudahRentDataAnalysis/
 ├── run_pipeline.py            # Single-command pipeline runner
 │
 ├── scripts/
-│   ├── 1_webscrape.py         # API → CSV (data/raw/)
-│   ├── 2_clean.py             # Clean raw CSVs → data/processed/
-│   ├── 3_load_to_db.py        # Upsert processed CSVs → data/mudah_rent.db
+│   ├── scrape.py              # API → CSV (data/raw/)
+│   ├── clean.py               # Clean raw CSVs → data/processed/
+│   ├── load_to_db.py          # Upsert processed CSVs → data/mudah_rent.db
 │   ├── mudah_api.py           # Mudah search API client + transformer
-│   ├── discover_regions.py    # One-shot probe to enumerate REGION_CODES
 │   ├── backfill_geocode.py    # Backfill missing lat/lon in DB
 │   ├── recheck.py             # Optional: track listing availability (active/rented/expired)
 │   └── logger.py              # Shared logging
@@ -70,13 +69,11 @@ MudahRentDataAnalysis/
 │   └── pipeline.log
 │
 └── data/
-    ├── raw/                   # Scraped CSV (source of truth)
+    ├── raw/                   # Scraped CSV (staging for clean step)
     ├── processed/             # Cleaned CSV (staging for DB load)
-    ├── archived/              # Processed CSV after DB load
-    ├── old/raw/               # Raw CSV after DB load
     ├── mapping.csv            # Property type standardization
     ├── geocache.json          # Geocoding cache (query → lat/lon)
-    └── mudah_rent.db          # SQLite database
+    └── mudah_rent.db          # SQLite database (source of truth)
 ```
 
 ---
@@ -84,14 +81,12 @@ MudahRentDataAnalysis/
 ## Pipeline
 
 ```
-1_webscrape.py   →   data/raw/*.csv          (search API + geocode)
-2_clean.py       →   data/processed/*.csv    (numeric rent/size, CPI mapping)
-3_load_to_db.py  →   data/mudah_rent.db      (upsert on ads_id, batched)
+scrape.py      →   data/raw/*.csv          (search API + geocode)
+clean.py       →   data/processed/*.csv    (numeric rent/size, CPI mapping)
+load_to_db.py  →   data/mudah_rent.db      (upsert on ads_id, batched)
 ```
 
-After `3_load_to_db.py` runs:
-- `data/processed/file.csv` → `data/archived/`
-- `data/raw/file.csv` → `data/old/raw/`
+After `load_to_db.py` runs, the loaded raw and processed CSVs are deleted — the DB is the source of truth.
 
 All pipeline activity logged to `logs/pipeline.log`.
 
@@ -118,11 +113,11 @@ pip install -r requirements.txt
 **Option A — Single command (recommended):**
 
 ```bash
-# Full pipeline: scrape + clean + load
-python run_pipeline.py --state selangor --start 1 --end 10
+# Full pipeline: scrape ALL states + ALL residential types, then clean + load
+python run_pipeline.py
 
-# Full coverage: scrape every residential property type (bypasses the ~10k depth cap)
-python run_pipeline.py --state selangor --all-types
+# One state only
+python run_pipeline.py --state selangor
 
 # Skip scraping — clean and load existing raw files only
 python run_pipeline.py --skip-scrape
@@ -133,15 +128,14 @@ python run_pipeline.py --skip-scrape
 **Option B — Step by step:**
 
 ```bash
-# Step 1 — Scrape listings via API
-python scripts/1_webscrape.py
-# Prompts: state slug, start page, end page
+# Step 1 — Scrape listings via API (interactive state/type pickers)
+python scripts/scrape.py
 
 # Step 2 — Clean raw data
-python scripts/2_clean.py
+python scripts/clean.py
 
 # Step 3 — Load into SQLite
-python scripts/3_load_to_db.py
+python scripts/load_to_db.py
 ```
 
 ### 3. Run tests
@@ -152,17 +146,7 @@ pytest -q
 
 API client tests use the `responses` library to mock HTTP calls — no network required.
 
-### 4. Refresh region codes (rare)
-
-If Mudah ever rotates region IDs, regenerate them:
-
-```bash
-python scripts/discover_regions.py
-```
-
-Then paste the printed `REGION_CODES = { ... }` block into `config.py`.
-
-### 5. Backfill missing lat/lon (optional)
+### 4. Backfill missing lat/lon (optional)
 
 When Nominatim can't resolve an address (or Mudah's `building_name` is empty), lat/lon may be NULL. The backfill fills these using region+state fallback:
 
@@ -175,7 +159,7 @@ python scripts/backfill_geocode.py
 - Reuses `data/geocache.json`
 - Always backup the DB before running: `cp data/mudah_rent.db data/mudah_rent.db.bak`
 
-### 6. Re-check availability (optional)
+### 5. Re-check availability (optional)
 
 Turns the static snapshot into time-series: which listings are still live, and whether
 a gone listing left **early (rented)** or just **expired**.
@@ -212,7 +196,6 @@ python scripts/recheck.py --limit 50  # cap for a test run
 | `GEO_CACHE_FILE` | `data/geocache.json` | Geocode cache |
 | `LOG_FILE` | `logs/pipeline.log` | Pipeline log |
 | `GEOLOCATION_TIMEOUT` | `5` s | Nominatim timeout |
-| `EXCLUDED_CATEGORIES` | Commercial, Land | Categories ignored at clean step |
 
 ---
 
@@ -221,9 +204,7 @@ python scripts/recheck.py --limit 50  # cap for a test run
 See `requirements.txt`. Key packages:
 
 - `requests` — HTTP client for the Mudah search API
-- `cloudscraper` — Used only by `discover_regions.py` (HTML inspection of listing pages, which sit behind Cloudflare)
-- `beautifulsoup4` — Region-discovery HTML parsing
-- `pandas` / `numpy` — Data processing
+- `pandas` — Data processing (pulls in `numpy`)
 - `geopy` — Address geocoding via Nominatim, `RateLimiter` (1 req/sec). Cached to `data/geocache.json`
 - `pytest` + `responses` — Test runner with HTTP mocking
 - `tqdm` — Progress bars

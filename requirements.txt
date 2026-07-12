@@ -1,10 +1,7 @@
-cloudscraper==1.2.71
 pandas==2.3.2
-beautifulsoup4==4.12.3
 tqdm==4.67.3
 requests==2.32.3
 geopy==2.4.1
-numpy==2.3.2
 # Dev dependencies
 pytest>=7.0
 responses>=0.25

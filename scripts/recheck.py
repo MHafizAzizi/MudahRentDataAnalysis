@@ -13,13 +13,13 @@ Optional, standalone pass — NOT part of run_pipeline.py. Back up the DB first:
     cp data/mudah_rent.db data/mudah_rent.db.bak
 """
 import sys
-import importlib.util
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
 from scripts.logger import get_logger
 from scripts import mudah_api
+from scripts import load_to_db
 
 logger = get_logger("recheck")
 
@@ -30,16 +30,6 @@ import sqlite3
 from datetime import datetime, date
 from typing import Optional
 from tqdm import tqdm
-
-
-def _load_db_module():
-    """Load scripts/3_load_to_db.py via importlib (filename starts with a digit)."""
-    path = Path(__file__).parent / "3_load_to_db.py"
-    spec = importlib.util.spec_from_file_location("load_to_db_module", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
 
 _DATE_FMT = "%Y-%m-%d"
 
@@ -94,9 +84,8 @@ def classify_gone(ad_expiry: Optional[str], today: date) -> str:
 
 
 def recheck(limit: Optional[int] = None):
-    db = _load_db_module()
     conn = sqlite3.connect(config.DB_FILE)
-    db.ensure_schema(conn)
+    load_to_db.ensure_schema(conn)
 
     placeholders = ", ".join("?" * len(config.RECHECK_TERMINAL_STATUSES))
     rows = conn.execute(

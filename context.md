@@ -10,13 +10,13 @@ A data pipeline that pulls Malaysian rental listings from the **Mudah.my public 
 
 - Replaces the original HTML scraper (~25× faster, no Cloudflare issues)
 - Geocodes listings via Nominatim, cached in `data/geocache.json`
-- Pipeline: `1_webscrape.py` → `2_clean.py` → `3_load_to_db.py`
+- Pipeline: `scrape.py` → `clean.py` → `load_to_db.py`
 
 ---
 
 ## Current Branch
 
-`main`. PRs #17 and #18 merged. No active feature branches.
+`testing`. PRs #17 and #18 merged to `main`.
 
 ---
 
@@ -25,10 +25,10 @@ A data pipeline that pulls Malaysian rental listings from the **Mudah.my public 
 - Use Mudah's undocumented JSON search API (`search.mudah.my/v1/search`) instead of HTML parsing.
 - Geocode using only `building_name + subarea_name + region_name` (no street address from API). Precision is region-level — acceptable for state/region analytics.
 - Geocode cache stored as `data/geocache.json` — shared between scraper and backfill script.
-- `discover_regions.py` is a one-shot script; `REGION_CODES` are hardcoded in `config.py`.
-- `backfill_geocode.py` loads `1_webscrape.py` via `importlib` (because the filename starts with a digit).
+- `REGION_CODES` are hardcoded in `config.py`; the one-shot `discover_regions.py` that generated them was deleted (2026-07-12 audit) — recover from git history if IDs ever rotate.
+- Pipeline scripts use plain names (`scrape.py`, `clean.py`, `load_to_db.py`) and normal imports — the numbered filenames and their `importlib` loading dance were removed in the 2026-07-12 audit.
 - Tests use the `responses` library to mock HTTP — no network required.
-- `mapping.csv` drives property-type standardisation via `create_mapping_dict` in `2_clean.py`.
+- `mapping.csv` drives property-type standardisation via `create_mapping_dict` in `clean.py`.
 - Dropped 6 columns (`furnished`, `facilities`, `additional_facilities`, `body`, `subject`, `building_id`) and deleted `enrich_details.py` — detail-only fields no longer collected.
 
 ---
@@ -67,12 +67,11 @@ A data pipeline that pulls Malaysian rental listings from the **Mudah.my public 
 |---|---|
 | `config.py` | Paths, API constants, `REGION_CODES` |
 | `scripts/mudah_api.py` | API client (`search`, `lookup`, `iter_listings`, `to_csv_row`, `geocode_query`) |
-| `scripts/1_webscrape.py` | Orchestrator: API → geocode → CSV. Interactive: `_prompt_state` + `_prompt_property_types` pickers |
-| `scripts/2_clean.py` | Cleans raw CSVs → processed CSVs (`clean_rent`/`clean_size`/`clean_rooms`) |
-| `scripts/3_load_to_db.py` | ON CONFLICT upsert → SQLite; `ensure_schema()` migrates older DBs |
+| `scripts/scrape.py` | Orchestrator: API → geocode → CSV. Interactive: `_prompt_state` + `_prompt_property_types` pickers |
+| `scripts/clean.py` | Cleans raw CSVs → processed CSVs (`clean_rent`/`clean_size`/`clean_rooms`) |
+| `scripts/load_to_db.py` | ON CONFLICT upsert → SQLite; `ensure_schema()` migrates older DBs |
 | `scripts/backfill_geocode.py` | Backfills NULL lat/lon in DB using region-level geocoding |
 | `scripts/recheck.py` | Optional: availability tracking (active/rented/expired) via per-listing API lookup |
-| `scripts/discover_regions.py` | One-shot: enumerate Mudah region IDs |
 | `tests/test_mudah_api.py` | API client + transformer tests (HTTP mocked) |
 | `tests/test_clean.py` | Cleaning function tests |
 | `data/geocache.json` | Geocode cache (query → lat/lon) |
@@ -89,7 +88,29 @@ At the end of each session:
 
 ---
 
-## Last Session — 2026-06-06
+## Last Session — 2026-07-12
+
+Ponytail audit applied (working tree, `testing` branch, not committed):
+- Renamed `1_webscrape.py`/`2_clean.py`/`3_load_to_db.py` → `scrape.py`/`clean.py`/`load_to_db.py`; replaced all `importlib` loaders (run_pipeline, recheck, backfill_geocode, conftest) with plain imports.
+- Deleted `discover_regions.py` (one-shot, already ran) and dropped its deps `cloudscraper` + `beautifulsoup4`; also dropped redundant `numpy` pin (pandas dependency).
+- Deleted dead HTML-scraper config (`BASE_URL`, `SCRAPER_CONFIG`, `MIN_DELAY`/`MAX_DELAY`/`BASE_SLEEP_TIME`, `PROPERTY_ATTRIBUTES`, `EXCLUDED_CATEGORIES`) and `SCRAPED_DATA_FILENAME_TEMPLATE`.
+- Removed `--pages` mode from `run_pipeline.py` (all-types is the only scrape mode; `--state`/`--skip-scrape` remain).
+- `load_to_db.py` now deletes loaded raw/processed CSVs instead of archiving to `data/archived/` + `data/old/raw/` (dirs + config vars removed — DB is the source of truth).
+- Shrunk `logger.py` to a `logging.basicConfig` one-shot (single INFO level; no DEBUG calls existed).
+- Removed `ensure_recheck_columns` alias and an unused `shutil` import.
+- README updated to match. Tests: 72 passed, 3 skipped (same as baseline).
+
+## Earlier — 2026-06-12
+
+- `run_pipeline.py` reworked: default is now **all states + all types**.
+  - `--state` defaults to `all` (loops `sorted(config.REGION_CODES)`); pass a slug for one state.
+  - All-types scrape (`scrape_all_types` per state) is the default mode. Old `--all-types` flag removed.
+  - Page-range scraping moved behind `--pages` flag (single state only; manual CSV write restored since `scrape()` returns a DataFrame and does not write).
+- Added `run_pipeline.bat` (project root): double-click → full default run; `%*` passes through CLI overrides. Ends with `pause` so the window stays open.
+- Verified `run_pipeline.py --help` parses clean.
+- Created personal skill `context-creation` (`C:\Users\USER\.claude\skills\context-creation\SKILL.md`) — generalizes this project's CLAUDE.md → context.md living-doc pattern for all projects. Built TDD-style (baseline + verification subagent tests passed). Not part of this repo.
+
+## Earlier — 2026-06-06
 
 - `rooms` normalized: `clean_rooms()` added to `2_clean.py`; DB backfilled (13,100 `.0` rows → int). Tests 27 passed.
 - Geocode backfill run → 0 null lat/lon across ~102k rows.
