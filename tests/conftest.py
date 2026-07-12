@@ -1,43 +1,33 @@
 import sys
-import importlib.util
 from pathlib import Path
 import pandas as pd
-import numpy as np
 import pytest
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-SCRIPTS = ROOT / "scripts"
-
-
-def load_script(filename: str):
-    path = SCRIPTS / filename
-    spec = importlib.util.spec_from_file_location(Path(filename).stem, path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+from scripts import clean, load_to_db, scrape, recheck
 
 
 # Expose script modules as session-scoped fixtures
 @pytest.fixture(scope="session")
 def clean_module():
-    return load_script("2_clean.py")
+    return clean
 
 
 @pytest.fixture(scope="session")
 def load_module():
-    return load_script("3_load_to_db.py")
+    return load_to_db
 
 
 @pytest.fixture(scope="session")
 def webscrape_module():
-    return load_script("1_webscrape.py")
+    return scrape
 
 
 @pytest.fixture(scope="session")
 def recheck_module():
-    return load_script("recheck.py")
+    return recheck
 
 
 @pytest.fixture

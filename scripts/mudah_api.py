@@ -111,7 +111,7 @@ def _join(value) -> str:
 
 
 def to_csv_row(item: Dict) -> Dict[str, str]:
-    """Map one API listing item to the CSV row schema expected by 2_clean.py / 3_load_to_db.py."""
+    """Map one API listing item to the CSV row schema expected by clean.py / load_to_db.py."""
     a = item.get("attributes", {})
 
     size = a.get("size", "")
