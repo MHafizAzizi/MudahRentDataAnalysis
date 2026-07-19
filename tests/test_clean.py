@@ -87,6 +87,18 @@ class TestCleanRentalData:
         result = clean.clean_rental_data(sample_raw_df)
         assert 'For rent' not in result['category_id'].iloc[0]
 
+    def test_excludes_non_residential_categories_but_keeps_room(self):
+        df = pd.DataFrame({'category_id': [
+            'Commercial Property, For rent',
+            'Land, For rent',
+            'Room, For rent',
+        ]})
+        result = clean.clean_rental_data(df)
+        assert 'Commercial Property' not in result['category_id'].values
+        assert 'Land' not in result['category_id'].values
+        # Room rentals are in scope — explicit decision, do not filter.
+        assert 'Room' in result['category_id'].values
+
     def test_returns_dataframe(self, sample_raw_df):
         result = clean.clean_rental_data(sample_raw_df)
         assert isinstance(result, pd.DataFrame)

@@ -30,6 +30,7 @@ A data pipeline that pulls Malaysian rental listings from the **Mudah.my public 
 - Tests use the `responses` library to mock HTTP — no network required.
 - `mapping.csv` drives property-type standardisation via `create_mapping_dict` in `clean.py`.
 - Dropped 6 columns (`furnished`, `facilities`, `additional_facilities`, `body`, `subject`, `building_id`) and deleted `enrich_details.py` — detail-only fields no longer collected.
+- **Non-residential listings excluded on `category_name`, not `property_type`** (2026-07-19). `config.EXCLUDED_CATEGORIES = {"Commercial Property", "Land"}`; `clean.py` drops them at ingest. Room rentals deliberately KEPT (user decision). Rationale: type names don't partition cleanly — `Shop lot` is commercial but `Shoplot` rooms are residential, and ids 31/36 are named `Residential`/`Mixed Development` yet return vacant land. `category_name` is a closed 5-value set (`Apartment / Condominium`, `House`, `Room`, `Commercial Property`, `Land`) and survives Mudah adding type ids. A `property_type`-name deny-list was tried first and caught only 5,577 of 11,152 non-residential rows.
 
 ---
 
@@ -58,8 +59,11 @@ A data pipeline that pulls Malaysian rental listings from the **Mudah.my public 
 
 - **Delete disk junk** (blocked by tool permissions 2026-07-19): `data/old/` (26 MB) + `logs/*.log` — regenerable, gitignored. `Remove-Item -Recurse -Force data\old; Remove-Item logs\*.log`.
 
-**Deprioritized / ignored:**
-- Kedah avg rent anomaly (RM3,999 vs national RM2,493) — likely commercial listings inflating the mean. User chose to ignore.
+- **Room-rental coverage gap.** Ids 27–29, 41–46, 113 (`category_name: Room`) are not in `RESIDENTIAL_PROPERTY_TYPE_IDS`, so the scraper never requests them; the ~6.1k rows in the DB arrived via API leakage and are not representative. Rooms are in scope by decision, so either add those ids to config for real coverage, or treat the existing Room rows as unreliable and analyze them separately. Do not mix them into whole-unit rent averages (Room avg RM546 vs RM2,335 for apartments).
+- **Drift canary:** if CPI `Other`'s average rent jumps well above ~RM2,900, a new non-residential category is leaking in — re-run the type-id probe.
+
+**Resolved:**
+- ~~Kedah avg rent anomaly~~ — SOLVED 2026-07-19. Was commercial contamination (Kulim/Sungai Petani industrial corridor: 852 warehouse listings at RM500k–755k/mo on a small residential base). Kedah median was always RM1,300; the mean was pure outlier artifact. Now RM1,564 after the category filter.
 
 ---
 
@@ -90,7 +94,22 @@ At the end of each session:
 
 ---
 
-## Last Session — 2026-07-19
+## Last Session — 2026-07-19 (part 2)
+
+Investigated the Kedah rent anomaly (previously deprioritized). Root cause: commercial listings, not a code bug. Fixed on branch `chore/exclude-commercial`.
+
+**API probe (live, ids 1–49 + 113 across 4 regions).** Authoritative findings:
+- Residential ids 1–19 match `RESIDENTIAL_PROPERTY_TYPE_IDS` exactly. Good.
+- Commercial: 21 Office space, 22 Shop lot, 23 Warehouse/Factory, 25 Retail space, 26 Hotel/Resort, 32 Industrial, 33 Agricultural, 35 Commercial.
+- **Land** masquerades as residential: id 31 = `Residential`, id 36 = `Mixed Development`, both `category_name: Land`.
+- **Room rentals are a separate id block** (27–29 Sofo/Soho/Sovo, 41–46, 113) NOT in config — the scraper never requests them, yet ~6.1k arrived via API cross-type leakage. Coverage is therefore partial/unrepresentative.
+- Confirms the API leaks types you didn't ask for; `property_type_id` filtering is not a hard guarantee.
+
+**Applied:** `EXCLUDED_CATEGORIES` in config; one-line filter in `clean.py:clean_rental_data`; one test (asserts Room survives — guards the explicit decision). One-shot `DELETE` removed 11,152 rows (10,628 Commercial Property + 524 Land). DB 144,874 → 133,722 rows. Backup at `data/mudah_rent.db.bak`. Tests 73 passed, 3 skipped.
+
+**Corrected stats** (national avg RM4,159 → **RM2,509**). Kedah RM15,053 → **RM1,564**, now 10th of 16 — anomaly fully resolved, no longer a data-quality concern. Top: Putrajaya RM5,440, Sabah RM3,771, Penang RM3,133. Bottom: Perlis RM1,060, Kelantan RM1,076.
+
+## Earlier — 2026-07-19 (part 1)
 
 Second ponytail audit applied (branch `chore/ponytail-cuts`, PR → `main`). Net −40 lines; tests 72 passed, 3 skipped (baseline held).
 - Dropped dead page-range plumbing: `scrape(state, max_pages=500, ...)` and `iter_listings(region, max_pages, ...)` — no more `start_page`/`end_page` (every caller started at page 1). `scrape_all_types` also lost `write_files` (writes unconditional).

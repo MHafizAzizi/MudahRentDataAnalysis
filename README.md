@@ -82,9 +82,22 @@ MudahRentDataAnalysis/
 
 ```
 scrape.py      →   data/raw/*.csv          (search API + geocode)
-clean.py       →   data/processed/*.csv    (numeric rent/size, CPI mapping)
+clean.py       →   data/processed/*.csv    (numeric rent/size, CPI mapping, category filter)
 load_to_db.py  →   data/mudah_rent.db      (upsert on ads_id, batched)
 ```
+
+**Non-residential listings are dropped at the clean step.** `clean.py` filters on the
+API's `category_name` (stored as `category_id`), discarding `config.EXCLUDED_CATEGORIES`
+= `Commercial Property` and `Land`. Room rentals are kept.
+
+The filter keys on category, not `property_type`, because the type names don't
+partition cleanly: `Shop lot` is commercial while `Shoplot` rooms are residential,
+and ids `31`/`36` return `Residential`/`Mixed Development` but are vacant land.
+`category_name` is a 5-value closed set — `Apartment / Condominium`, `House`,
+`Room`, `Commercial Property`, `Land` — and survives Mudah adding new type ids.
+
+> Drift canary: if the `Other` CPI bucket's average rent jumps (it should sit near
+> RM2,900), a new non-residential category is leaking in. Re-probe the type ids.
 
 After `load_to_db.py` runs, the loaded raw and processed CSVs are deleted — the DB is the source of truth.
 
@@ -190,6 +203,7 @@ python scripts/recheck.py --limit 50  # cap for a test run
 | `API_REQUEST_TIMEOUT` | `15` s | Per-request timeout |
 | `API_MIN_DELAY` / `API_MAX_DELAY` | `0.5` / `1.5` s | Polite delay between API pages |
 | `REGION_CODES` | 16 states | State slug → Mudah region_id |
+| `EXCLUDED_CATEGORIES` | `Commercial Property`, `Land` | Non-residential categories dropped by `clean.py` |
 | `RAW_DATA_DIR` | `data/raw/` | Scraped output |
 | `PROCESSED_DATA_DIR` | `data/processed/` | Cleaned output |
 | `DB_FILE` | `data/mudah_rent.db` | SQLite path |

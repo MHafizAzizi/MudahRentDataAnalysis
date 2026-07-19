@@ -90,6 +90,12 @@ RESIDENTIAL_PROPERTY_TYPE_IDS = {
     19: "1.5-storey Terraced House",
 }
 
+# Non-residential categories, keyed on the API's category_name (a 5-value closed set).
+# Chosen over property_type names: category_name survives Mudah adding new type ids,
+# and it correctly keeps room rentals that sit in commercial buildings.
+# 'Room' is deliberately NOT excluded — room rentals are in scope.
+EXCLUDED_CATEGORIES = frozenset({"Commercial Property", "Land"})
+
 # --- Availability Re-check (recheck.py) ---
 # The search API supports a per-listing lookup: GET ?list_id=<id>&fields=all returns
 # the item in `data` if live, or an empty `data` array if gone (rented/expired).

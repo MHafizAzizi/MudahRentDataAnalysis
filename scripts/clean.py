@@ -57,6 +57,7 @@ def clean_rental_data(df: pd.DataFrame) -> pd.DataFrame:
 
     if 'category_id' in df.columns:
         df['category_id'] = df['category_id'].fillna('').astype(str).str.replace(', For rent', '', regex=False)
+        df = df[~df['category_id'].isin(config.EXCLUDED_CATEGORIES)]
 
     if 'size' in df.columns:
         df['size'] = df['size'].apply(clean_size)
