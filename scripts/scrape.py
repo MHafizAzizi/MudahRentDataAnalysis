@@ -8,10 +8,11 @@ import sqlite3
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
-from scripts.logger import get_logger
+import logging
+import scripts.logger  # noqa: F401  — configures root handlers
 from scripts import mudah_api
 
-logger = get_logger("webscrape")
+logger = logging.getLogger("webscrape")
 
 import re
 import json
@@ -80,10 +81,10 @@ def geocode(query: str, cache: dict) -> Tuple[Optional[float], Optional[float]]:
     return result
 
 
-def scrape(state: str, start_page: int, end_page: int,
+def scrape(state: str, max_pages: int = 500,
            property_type_id: Optional[int] = None,
            skip_known: bool = True) -> pd.DataFrame:
-    """Scrape rental listings for `state` (URL slug) over the given page range.
+    """Scrape rental listings for `state` (URL slug), paginating up to max_pages.
 
     Pass property_type_id to scrape a single property type (its own depth window).
     Pass skip_known=False to re-scrape listings already in the DB.
@@ -94,16 +95,15 @@ def scrape(state: str, start_page: int, end_page: int,
             f"Unknown state {state_key!r}. Known: {sorted(config.REGION_CODES)}"
         )
     region = config.REGION_CODES[state_key]
-    max_pages = max(1, end_page - start_page + 1)
 
     geocache = _load_geocache()
     rows = []
     today = datetime.now().strftime("%Y-%m-%d")
 
-    logger.info(f"Fetching listings: state={state_key} region={region} pages {start_page}..{end_page} property_type_id={property_type_id}")
+    logger.info(f"Fetching listings: state={state_key} region={region} max_pages={max_pages} property_type_id={property_type_id}")
     items = list(tqdm(
         mudah_api.iter_listings(
-            region=region, start_page=start_page, max_pages=max_pages,
+            region=region, max_pages=max_pages,
             property_type_id=property_type_id,
         ),
         desc="Fetching listings",
@@ -139,10 +139,9 @@ def _slug(text: str) -> str:
     return s.strip("_") or "type"
 
 
-def scrape_all_types(state: str, start_page: int = 1, max_pages: int = 500,
+def scrape_all_types(state: str, max_pages: int = 500,
                      skip_known: bool = True,
-                     property_type_ids: Optional[List[int]] = None,
-                     write_files: bool = True) -> pd.DataFrame:
+                     property_type_ids: Optional[List[int]] = None) -> pd.DataFrame:
     """Scrape residential property types for `state`, one filtered query each.
 
     The API caps pagination at ~9,984 results per query (API_OFFSET_CAP), but each
@@ -152,7 +151,7 @@ def scrape_all_types(state: str, start_page: int = 1, max_pages: int = 500,
 
     Pass property_type_ids to scrape only a subset; None = every residential type.
 
-    When write_files=True, results are saved under data/raw/<state>/:
+    Results are saved under data/raw/<state>/:
       - one CSV per property type, written immediately after that type finishes
         (a crash-safe checkpoint — a mid-run failure keeps completed types), and
       - a combined deduped CSV (<state>_ALL_<ts>.csv) once all types are done.
@@ -167,26 +166,24 @@ def scrape_all_types(state: str, start_page: int = 1, max_pages: int = 500,
     state_slug = (state or "malaysia").strip().lower()
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     out_dir = config.RAW_DATA_DIR / state_slug
-    if write_files:
-        out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     frames = []
     for pt_id, name in type_items:
         logger.info(f"Scraping type {pt_id} ({name})")
-        df = scrape(state, start_page, start_page + max_pages - 1,
+        df = scrape(state, max_pages=max_pages,
                     property_type_id=pt_id, skip_known=skip_known)
         logger.info(f"  {name}: {len(df)} rows")
         if df.empty:
             continue
         frames.append(df)
-        if write_files:
-            fname = config.SCRAPED_TYPE_FILENAME_TEMPLATE.format(
-                state=state_slug, type_id=pt_id, type_slug=_slug(name),
-                timestamp=timestamp,
-            )
-            type_path = out_dir / fname
-            df.to_csv(type_path, index=False)
-            logger.info(f"  Saved {len(df)} rows -> {type_path}")
+        fname = config.SCRAPED_TYPE_FILENAME_TEMPLATE.format(
+            state=state_slug, type_id=pt_id, type_slug=_slug(name),
+            timestamp=timestamp,
+        )
+        type_path = out_dir / fname
+        df.to_csv(type_path, index=False)
+        logger.info(f"  Saved {len(df)} rows -> {type_path}")
 
     if not frames:
         logger.warning("No rows scraped for any selected type.")
@@ -198,20 +195,19 @@ def scrape_all_types(state: str, start_page: int = 1, max_pages: int = 500,
         combined = combined.drop_duplicates(subset="ads_id").reset_index(drop=True)
         logger.info(f"Combined {before} rows -> {len(combined)} unique after dedup")
 
-    if write_files:
-        combined_path = out_dir / config.SCRAPED_COMBINED_FILENAME_TEMPLATE.format(
-            state=state_slug, timestamp=timestamp,
-        )
-        combined.to_csv(combined_path, index=False)
-        logger.info(f"Saved combined {len(combined)} rows -> {combined_path}")
+    combined_path = out_dir / config.SCRAPED_COMBINED_FILENAME_TEMPLATE.format(
+        state=state_slug, timestamp=timestamp,
+    )
+    combined.to_csv(combined_path, index=False)
+    logger.info(f"Saved combined {len(combined)} rows -> {combined_path}")
 
     return combined
 
 
-def _prompt_state() -> Optional[List[str]]:
-    """Show a numbered list of known states; return list of chosen URL slugs.
+def _prompt_state() -> Optional[str]:
+    """Show a numbered list of known states; return the chosen URL slug.
 
-    Press Enter alone to scrape ALL states. Returns None for all, else [slug, ...].
+    Press Enter alone to scrape ALL states. Returns None for all, else a slug.
     """
     states = sorted(config.REGION_CODES)
     col_w = max(len(s) for s in states) + 2
@@ -231,9 +227,9 @@ def _prompt_state() -> Optional[List[str]]:
         if raw.isdigit():
             idx = int(raw)
             if 1 <= idx <= len(states):
-                return [states[idx - 1]]
+                return states[idx - 1]
         elif raw in config.REGION_CODES:
-            return [raw]
+            return raw
         print(f"  ✗ invalid — enter 1-{len(states)}, a valid slug, or Enter for all.")
 
 
@@ -297,10 +293,10 @@ def _prompt_property_types() -> Optional[List[int]]:
 
 def main():
     print("\n=== Mudah Rent Scraper ===")
-    states = _prompt_state()  # None = all, [slug] = one
+    state_choice = _prompt_state()  # None = all, slug = one
     pt_ids = _prompt_property_types()
 
-    all_states = sorted(config.REGION_CODES) if states is None else states
+    all_states = sorted(config.REGION_CODES) if state_choice is None else [state_choice]
     total_rows = 0
 
     for i, state in enumerate(all_states, 1):

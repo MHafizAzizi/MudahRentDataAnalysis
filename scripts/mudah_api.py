@@ -79,16 +79,14 @@ def lookup(list_id) -> list:
 
 def iter_listings(
     region: str,
-    start_page: int = 1,
     max_pages: int = 100,
     property_type_id: Optional[int] = None,
 ) -> Iterator[Dict]:
-    """Yield listing dicts for the given region, paginating up to max_pages.
+    """Yield listing dicts for the given region, paginating pages 1..max_pages.
 
     Stops early when the API returns fewer than API_PAGE_SIZE items.
     """
-    page = start_page
-    while page <= start_page + max_pages - 1:
+    for page in range(1, max_pages + 1):
         offset = (page - 1) * config.API_PAGE_SIZE
         body = search(region=region, offset=offset, property_type_id=property_type_id)
         items = body.get("data", [])
@@ -96,7 +94,6 @@ def iter_listings(
             yield item
         if len(items) < config.API_PAGE_SIZE:
             return
-        page += 1
         # Polite delay between API calls
         time.sleep(random.uniform(config.API_MIN_DELAY, config.API_MAX_DELAY))
 

@@ -14,8 +14,3 @@ logging.basicConfig(
         logging.FileHandler(config.LOG_FILE, encoding="utf-8"),
     ],
 )
-
-
-def get_logger(name: str) -> logging.Logger:
-    """Return a logger that writes to both console and logs/pipeline.log."""
-    return logging.getLogger(name)

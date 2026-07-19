@@ -3,9 +3,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
-from scripts.logger import get_logger
+import logging
+import scripts.logger  # noqa: F401  — configures root handlers
 
-logger = get_logger("clean")
+logger = logging.getLogger("clean")
 
 import pandas as pd
 import numpy as np
@@ -66,7 +67,7 @@ def clean_rental_data(df: pd.DataFrame) -> pd.DataFrame:
     if 'publishedDatetime' in df.columns:
         df['publishedDatetime'] = pd.to_datetime(
             df['publishedDatetime'], errors='coerce', dayfirst=True
-        ).dt.strftime(config.DATETIME_FORMAT).fillna('')
+        ).dt.strftime("%m/%d/%Y").fillna('')
 
     return df
 

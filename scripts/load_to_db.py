@@ -3,9 +3,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
-from scripts.logger import get_logger
+import logging
+import scripts.logger  # noqa: F401  — configures root handlers
 
-logger = get_logger("load_to_db")
+logger = logging.getLogger("load_to_db")
 
 import sqlite3
 import pandas as pd
@@ -39,8 +40,7 @@ CREATE TABLE IF NOT EXISTS {config.DB_TABLE} (
     first_seen            TEXT,
     last_checked_at       TEXT,
     availability_status   TEXT DEFAULT 'active',
-    gone_at               TEXT,
-    check_count           INTEGER DEFAULT 0
+    gone_at               TEXT
 );
 """
 
@@ -74,11 +74,10 @@ COLUMN_DEFS = {
     "last_checked_at": "TEXT",
     "availability_status": "TEXT DEFAULT 'active'",
     "gone_at": "TEXT",
-    "check_count": "INTEGER DEFAULT 0",
 }
 
 # Recheck-managed columns — kept out of the scrape upsert to preserve availability history.
-RECHECK_COLUMNS = {"first_seen", "last_checked_at", "availability_status", "gone_at", "check_count"}
+RECHECK_COLUMNS = {"first_seen", "last_checked_at", "availability_status", "gone_at"}
 
 # Scrape-sourced columns, in order — the only columns the upsert writes.
 SCRAPE_COLUMNS = ['ads_id'] + [c for c in COLUMN_DEFS if c not in RECHECK_COLUMNS]
@@ -134,19 +133,16 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             f"UPDATE {config.DB_TABLE} SET availability_status = 'active' "
             f"WHERE availability_status IS NULL;"
         )
-        conn.execute(
-            f"UPDATE {config.DB_TABLE} SET check_count = 0 WHERE check_count IS NULL;"
-        )
     conn.commit()
 
 
 def upsert_dataframe(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
     """Upsert rows by ads_id, preserving recheck-managed columns. Returns row count.
 
-    On insert: first_seen = scrape_date, availability_status = 'active', check_count = 0.
+    On insert: first_seen = scrape_date, availability_status = 'active'.
     On conflict (existing listing re-scraped): scrape columns are refreshed and the
     listing is re-affirmed live (status -> 'active', gone_at cleared, last_checked_at
-    bumped to this scrape_date) — but first_seen and check_count are left untouched.
+    bumped to this scrape_date) — but first_seen is left untouched.
     """
     if 'ads_id' not in df.columns:
         raise ValueError("DataFrame missing 'ads_id' column — cannot upsert.")
@@ -167,8 +163,8 @@ def upsert_dataframe(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
     )
     sql = (
         f"INSERT INTO {config.DB_TABLE} ({', '.join(insert_cols)}, "
-        f"availability_status, check_count) "
-        f"VALUES ({placeholders}, 'active', 0) "
+        f"availability_status) "
+        f"VALUES ({placeholders}, 'active') "
         f"ON CONFLICT(ads_id) DO UPDATE SET "
         f"{update_set}, "
         f"availability_status = 'active', "

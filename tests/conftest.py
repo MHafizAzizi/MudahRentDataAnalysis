@@ -6,29 +6,6 @@ import pytest
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from scripts import clean, load_to_db, scrape, recheck
-
-
-# Expose script modules as session-scoped fixtures
-@pytest.fixture(scope="session")
-def clean_module():
-    return clean
-
-
-@pytest.fixture(scope="session")
-def load_module():
-    return load_to_db
-
-
-@pytest.fixture(scope="session")
-def webscrape_module():
-    return scrape
-
-
-@pytest.fixture(scope="session")
-def recheck_module():
-    return recheck
-
 
 @pytest.fixture
 def sample_raw_df():

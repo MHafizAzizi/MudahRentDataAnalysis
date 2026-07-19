@@ -11,10 +11,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
-from scripts.logger import get_logger
+import logging
+import scripts.logger  # noqa: F401  — configures root handlers
 from scripts.scrape import geocode as _geocode, _load_geocache, _save_geocache
 
-logger = get_logger("backfill_geocode")
+logger = logging.getLogger("backfill_geocode")
 
 import sqlite3
 from tqdm import tqdm
