@@ -98,8 +98,18 @@ and ids `31`/`36` return `Residential`/`Mixed Development` but are vacant land.
 `category_name` is a 5-value closed set — `Apartment / Condominium`, `House`,
 `Room`, `Commercial Property`, `Land` — and survives Mudah adding new type ids.
 
-> Drift canary: if the `Other` CPI bucket's average rent jumps (it should sit near
-> RM2,900), a new non-residential category is leaking in. Re-probe the type ids.
+> **Drift check.** The DB should only ever hold three categories:
+>
+> ```sql
+> SELECT DISTINCT category_id FROM properties;
+> -- expect exactly: Apartment / Condominium, House, Room
+> ```
+>
+> A fourth value means Mudah added a category that `EXCLUDED_CATEGORIES` doesn't
+> cover — decide whether it's residential and add it to the filter if not.
+> (An earlier version of this check watched the `Other` CPI bucket's average rent
+> against a fixed threshold. That number drifted the moment the room types were
+> added, since cheap room listings map into `Other`. The category set doesn't drift.)
 
 After `load_to_db.py` runs, the loaded raw and processed CSVs are deleted — the DB is the source of truth.
 

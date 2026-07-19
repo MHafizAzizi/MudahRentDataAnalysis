@@ -59,9 +59,8 @@ A data pipeline that pulls Malaysian rental listings from the **Mudah.my public 
 
 - **Delete disk junk** (blocked by tool permissions 2026-07-19): `data/old/` (26 MB) + `logs/*.log` — regenerable, gitignored. `Remove-Item -Recurse -Force data\old; Remove-Item logs\*.log`.
 
-- **Run a full scrape to realise the new type coverage.** Ids 41–46 and 111–117 were added to config on 2026-07-19 but no scrape has run since — the DB's existing Room rows are still the old unrepresentative leakage sample. Until a full run completes, do not treat Room or the 111–117 house types as complete.
-- **Don't mix Room into whole-unit rent averages** (Room avg RM546 vs RM2,335 for apartments). Split on `category_id`.
-- **Drift canary:** if CPI `Other`'s average rent jumps well above ~RM2,900, a new non-residential category is leaking in — re-run the type-id probe.
+- **Don't mix Room into whole-unit rent averages** (Room avg RM566 vs RM2,333 for apartments). Split on `category_id`.
+- **Drift check:** `SELECT DISTINCT category_id FROM properties;` must return exactly `Apartment / Condominium`, `House`, `Room`. A fourth value = Mudah added a category `EXCLUDED_CATEGORIES` doesn't cover. Replaced an earlier CPI-`Other`-average-rent threshold, which drifted the moment room types were added (cheap room listings map into `Other`, pulling it from ~RM2,900 to ~RM1,500). Category set doesn't drift; don't reintroduce a magic number.
 
 **Resolved:**
 - ~~Kedah avg rent anomaly~~ — SOLVED 2026-07-19. Was commercial contamination (Kulim/Sungai Petani industrial corridor: 852 warehouse listings at RM500k–755k/mo on a small residential base). Kedah median was always RM1,300; the mean was pure outlier artifact. Now RM1,564 after the category filter.
@@ -95,7 +94,22 @@ At the end of each session:
 
 ---
 
-## Last Session — 2026-07-19 (part 3)
+## Last Session — 2026-07-19 (part 4)
+
+User ran a full scrape on the 29-type config. Verified the result, backfilled geocodes, replaced the drift canary.
+
+**Scrape landed clean.** DB 133,722 → **147,573 rows** (28,393 scraped 2026-07-19). All 12 new type ids present. `category_id` holds exactly the 3 residential values — the `clean.py` filter did its job, zero commercial/land.
+- **Room coverage tripled: 6,114 → 18,196.** The old leakage sample was ~34% of actual — every prior room statistic was badly undercounted.
+- New house block is real but small: Terraced House 1,134, Cluster House 241, the other four <30 each.
+- **Whole-unit avg RM2,602 vs RM2,603 pre-scrape.** +13,851 rows and two new type blocks moved the headline by RM1 — strong evidence the new coverage is the same market, not a distortion.
+
+**Geocode backfill run:** 17,550 nulls → **0**. 281 distinct (region,state) pairs, 4 seconds (nearly all cache hits against the 7,536-entry geocache). All coords verified inside Malaysia's bbox.
+
+**Canary replaced (my error, corrected).** The documented "CPI `Other` ≈ RM2,900" threshold went stale the moment room types landed — cheap room `Others` (RM717) map into that bucket and dragged it to RM1,496. Swapped the magic number for a set check on `category_id`, which can't drift. Lesson: don't put a derived statistic in a threshold that a scope change moves.
+
+**Known non-issue:** `rooms` is NULL on 100% of Room-category rows and ~0% elsewhere — the API doesn't return `rooms_name` for room rentals. Expected, not a fault.
+
+## Earlier — 2026-07-19 (part 3)
 
 Closed the type-coverage gap. `RESIDENTIAL_PROPERTY_TYPE_IDS` 17 → **29 types**, on branch `feat/room-house-type-coverage`.
 
