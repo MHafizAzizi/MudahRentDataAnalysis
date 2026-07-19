@@ -7,7 +7,7 @@ When a listing disappears it's classified using `ad_expiry`:
   - gone AT/AFTER ad_expiry -> 'expired' (ad window simply lapsed)
 
 Maintains in-place columns on the `properties` table: first_seen, last_checked_at,
-availability_status, gone_at, check_count.
+availability_status, gone_at.
 
 Optional, standalone pass — NOT part of run_pipeline.py. Back up the DB first:
     cp data/mudah_rent.db data/mudah_rent.db.bak
@@ -17,11 +17,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
-from scripts.logger import get_logger
+import logging
+import scripts.logger  # noqa: F401  — configures root handlers
 from scripts import mudah_api
 from scripts import load_to_db
 
-logger = get_logger("recheck")
+logger = logging.getLogger("recheck")
 
 import time
 import random
@@ -87,15 +88,13 @@ def recheck(limit: Optional[int] = None):
     conn = sqlite3.connect(config.DB_FILE)
     load_to_db.ensure_schema(conn)
 
-    placeholders = ", ".join("?" * len(config.RECHECK_TERMINAL_STATUSES))
     rows = conn.execute(
         f"""
         SELECT ads_id, first_seen, last_checked_at, ad_expiry
         FROM {config.DB_TABLE}
         WHERE availability_status IS NULL
-           OR availability_status NOT IN ({placeholders})
-        """,
-        tuple(config.RECHECK_TERMINAL_STATUSES),
+           OR availability_status NOT IN ('rented', 'expired')
+        """
     ).fetchall()
 
     today = date.today()
@@ -124,7 +123,7 @@ def recheck(limit: Optional[int] = None):
         if data:
             conn.execute(
                 f"""UPDATE {config.DB_TABLE}
-                    SET last_checked_at = ?, check_count = COALESCE(check_count, 0) + 1
+                    SET last_checked_at = ?
                     WHERE ads_id = ?""",
                 (today_str, ads_id),
             )
@@ -133,8 +132,7 @@ def recheck(limit: Optional[int] = None):
             status = classify_gone(ad_expiry, today)
             conn.execute(
                 f"""UPDATE {config.DB_TABLE}
-                    SET availability_status = ?, gone_at = ?, last_checked_at = ?,
-                        check_count = COALESCE(check_count, 0) + 1
+                    SET availability_status = ?, gone_at = ?, last_checked_at = ?
                     WHERE ads_id = ?""",
                 (status, today_str, today_str, ads_id),
             )

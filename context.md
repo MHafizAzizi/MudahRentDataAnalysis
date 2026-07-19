@@ -16,7 +16,7 @@ A data pipeline that pulls Malaysian rental listings from the **Mudah.my public 
 
 ## Current Branch
 
-`testing`. PRs #17 and #18 merged to `main`.
+`main`. PRs #17, #18, #20, #21 merged.
 
 ---
 
@@ -56,6 +56,8 @@ A data pipeline that pulls Malaysian rental listings from the **Mudah.my public 
   3. DB active ids IN fresh set → bulk `UPDATE last_checked_at` (no per-listing API calls).
   Result: ~3–6h total. Reuses `scrape_all_types()` + `mudah_api.lookup()` unchanged.
 
+- **Delete disk junk** (blocked by tool permissions 2026-07-19): `data/old/` (26 MB) + `logs/*.log` — regenerable, gitignored. `Remove-Item -Recurse -Force data\old; Remove-Item logs\*.log`.
+
 **Deprioritized / ignored:**
 - Kedah avg rent anomaly (RM3,999 vs national RM2,493) — likely commercial listings inflating the mean. User chose to ignore.
 
@@ -88,7 +90,19 @@ At the end of each session:
 
 ---
 
-## Last Session — 2026-07-12
+## Last Session — 2026-07-19
+
+Second ponytail audit applied (branch `chore/ponytail-cuts`, PR → `main`). Net −40 lines; tests 72 passed, 3 skipped (baseline held).
+- Dropped dead page-range plumbing: `scrape(state, max_pages=500, ...)` and `iter_listings(region, max_pages, ...)` — no more `start_page`/`end_page` (every caller started at page 1). `scrape_all_types` also lost `write_files` (writes unconditional).
+- Deleted write-only `check_count` DB column from schema, upsert, and recheck updates. Existing DB keeps orphan column (harmless — `ensure_schema` only ADDs).
+- `logger.py` is now config-only (`basicConfig`); callers do `import scripts.logger` + `logging.getLogger(name)` — `get_logger` wrapper deleted.
+- Deleted conftest module fixtures (`clean_module` etc.) — tests import `from scripts import ...` directly.
+- Inlined one-use constants: `DATETIME_FORMAT` (→ clean.py literal), `RECHECK_TERMINAL_STATUSES` (→ literal `NOT IN ('rented','expired')` in recheck query).
+- `_prompt_state` returns `Optional[str]` (was 1-item list).
+- README updated (iter_listings signature, recheck columns).
+- Audit finding NOT applied (permission-blocked, left to user): delete `data/old/` (26 MB stale CSVs) + `logs/*.log` (1.9 MB) — regenerable, gitignored junk.
+
+## Earlier — 2026-07-12
 
 Ponytail audit applied, then committed and pushed as PR #20 (`testing` → `main`). Tests: 72 passed, 3 skipped.
 - Renamed `1_webscrape.py`/`2_clean.py`/`3_load_to_db.py` → `scrape.py`/`clean.py`/`load_to_db.py`; replaced all `importlib` loaders (run_pipeline, recheck, backfill_geocode, conftest) with plain imports.

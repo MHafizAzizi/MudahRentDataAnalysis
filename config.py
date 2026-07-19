@@ -39,9 +39,6 @@ SCRAPED_TYPE_FILENAME_TEMPLATE = "{state}_{type_id}_{type_slug}_{timestamp}.csv"
 SCRAPED_COMBINED_FILENAME_TEMPLATE = "{state}_ALL_{timestamp}.csv"
 SCRAPED_COMBINED_MARKER = "_ALL_"
 
-# Datetime format for parsing
-DATETIME_FORMAT = "%m/%d/%Y"
-
 # --- API Configuration ---
 API_BASE_URL = "https://search.mudah.my/v1/search"
 API_CATEGORY_PROPERTY = "2000"
@@ -98,7 +95,6 @@ RESIDENTIAL_PROPERTY_TYPE_IDS = {
 # the item in `data` if live, or an empty `data` array if gone (rented/expired).
 # recheck.py uses this to track availability with a decaying check cadence.
 RECHECK_DECAY = [(7, 1), (21, 3), (None, 7)]   # (age_days_lt, interval_days); None = catch-all
-RECHECK_TERMINAL_STATUSES = {"rented", "expired"}
 AD_EXPIRY_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 # Region codes (state URL slug -> Mudah region_id), probed from each state's listing

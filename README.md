@@ -27,7 +27,7 @@ A single request returns up to 200 listings with structured attributes: `monthly
 
 `scripts/mudah_api.py` wraps this:
 - `search(region, offset, property_type_id=None)` — one API call; retries 403/429/5xx with backoff + `Retry-After`
-- `iter_listings(region, start_page, max_pages, property_type_id=None)` — paginates, stops early on a partial page
+- `iter_listings(region, max_pages, property_type_id=None)` — paginates, stops early on a partial page
 - `to_csv_row(item)` — maps an API item to the project's CSV schema
 - `geocode_query(attributes)` — composes `building, subarea, region, Malaysia` for Nominatim
 
@@ -172,7 +172,7 @@ python scripts/recheck.py --limit 50  # cap for a test run
 - Uses the search API's per-listing lookup (`GET ?list_id=<id>` → item if live, empty if gone) — one cheap call each, no Cloudflare
 - **Decaying cadence** (`config.RECHECK_DECAY`): young listings checked daily, then every 3 days, then weekly
 - On disappearance, classifies via `ad_expiry`: gone before expiry → `rented`, at/after → `expired` (missing expiry → `expired`)
-- Maintains in-place columns: `first_seen`, `last_checked_at`, `availability_status`, `gone_at`, `check_count`
+- Maintains in-place columns: `first_seen`, `last_checked_at`, `availability_status`, `gone_at`
 - The loader's `ON CONFLICT` upsert preserves these across re-scrapes; `ensure_schema()` migrates older DBs by adding any missing columns
 - Optional, separate pass — NOT part of `run_pipeline.py`. Back up the DB first.
 
