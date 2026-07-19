@@ -66,6 +66,27 @@ def test_live_property_type_filter_works():
     )
 
 
+def test_live_configured_types_are_residential():
+    """Every configured type id must still return a residential category.
+
+    Mudah can reassign ids. If one drifts into Commercial Property or Land,
+    clean.py would silently discard everything scraped under it — a scrape that
+    looks fine but loads nothing. Samples a few ids per block to stay polite.
+    """
+    region = config.REGION_CODES["selangor"]
+    sampled = [1, 13, 41, 44, 46, 113, 114]  # whole-unit, room, and house blocks
+    for pid in sampled:
+        assert pid in config.RESIDENTIAL_PROPERTY_TYPE_IDS, f"id {pid} left config"
+        items = mudah_api.search(region=region, offset=0, property_type_id=pid)["data"]
+        if not items:
+            continue  # sparse type in this region; not a drift signal
+        category = items[0].get("attributes", {}).get("category_name")
+        assert category not in config.EXCLUDED_CATEGORIES, (
+            f"property_type_id {pid} now returns category {category!r} — "
+            f"clean.py would drop everything scraped under it"
+        )
+
+
 def test_live_transformer_maps_real_item():
     region = config.REGION_CODES["selangor"]
     item = mudah_api.search(region=region, offset=0)["data"][0]

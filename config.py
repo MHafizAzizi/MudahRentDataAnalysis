@@ -66,10 +66,19 @@ API_RETRY_MAX_WAIT = 300    # cap any single backoff/Retry-After at 5 min
 # regardless of total-results. Filter per property_type_id to get a fresh window.
 API_OFFSET_CAP = 9984
 
-# Residential property_type_id -> name (discovered via API probe 2026-05-29).
-# Commercial types (21=Office space, 22=Shop lot, 23=Warehouse/Factory, 24=Others)
-# are excluded — this is a residential rental project. Each type's total is well
-# under API_OFFSET_CAP, so scraping per type bypasses the depth cap.
+# Residential property_type_id -> name (probed 2026-05-29, extended 2026-07-19).
+# Each type's total is well under API_OFFSET_CAP, so scraping per type bypasses
+# the depth cap. Three non-contiguous blocks, all residential:
+#   1-19    whole units      (category_name: Apartment / Condominium, House)
+#   41-46   room rentals     (category_name: Room)
+#   111-117 houses           (category_name: House)
+#
+# Excluded — verified commercial via category_name, do NOT re-add:
+#   21 Office space, 22 Shop lot, 23 Warehouse/Factory, 24 Others, 25 Retail
+#   space, 26 Hotel/Resort, 32 Industrial, 33 Agricultural, 35 Commercial, and
+#   27 Sofo / 28 Soho / 29 Sovo — these three read as residential unit types but
+#   the API files them under Commercial Property.
+# Also excluded: 31 'Residential' and 36 'Mixed Development' — both are Land.
 RESIDENTIAL_PROPERTY_TYPE_IDS = {
     1: "Condominium",
     2: "Apartment",
@@ -88,6 +97,21 @@ RESIDENTIAL_PROPERTY_TYPE_IDS = {
     17: "Others",
     18: "Townhouse",
     19: "1.5-storey Terraced House",
+    # Room rentals (category_name: Room). Note 44 'Shoplot' is a room inside a
+    # shop lot — residential, unlike commercial id 22 'Shop lot'.
+    41: "Condo / Services residence / Penthouse / Townhouse",
+    42: "Apartment / Flat",
+    43: "Houses",
+    44: "Shoplot",
+    45: "Sharing a house / Flat",
+    46: "Others",
+    # Houses (category_name: House). 116 and 118+ return nothing.
+    111: "Link Bungalow",
+    112: "Zero-Lot Bungalow",
+    113: "Cluster House",
+    114: "Terraced House",
+    115: "Twin Villas",
+    117: "3.5-storey Terraced House",
 }
 
 # Non-residential categories, keyed on the API's category_name (a 5-value closed set).

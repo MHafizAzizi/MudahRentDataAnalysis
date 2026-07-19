@@ -258,3 +258,15 @@ def test_geocode_query_includes_building_when_present():
 
 def test_geocode_query_handles_all_empty():
     assert mudah_api.geocode_query({}) == ""
+
+
+def test_no_commercial_ids_in_residential_types():
+    """Guard the easy mistake: several commercial ids read as residential names.
+
+    27/28/29 (Sofo/Soho/Sovo) and 31/36 ('Residential'/'Mixed Development') all
+    sound like homes; the API files them under Commercial Property and Land.
+    Verified by live probe 2026-07-19.
+    """
+    non_residential = {21, 22, 23, 24, 25, 26, 27, 28, 29, 31, 32, 33, 34, 35, 36}
+    overlap = non_residential & set(config.RESIDENTIAL_PROPERTY_TYPE_IDS)
+    assert not overlap, f"non-residential property_type_ids in config: {sorted(overlap)}"
