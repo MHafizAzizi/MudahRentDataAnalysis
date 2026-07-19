@@ -59,7 +59,8 @@ A data pipeline that pulls Malaysian rental listings from the **Mudah.my public 
 
 - **Delete disk junk** (blocked by tool permissions 2026-07-19): `data/old/` (26 MB) + `logs/*.log` — regenerable, gitignored. `Remove-Item -Recurse -Force data\old; Remove-Item logs\*.log`.
 
-- **Room-rental coverage gap.** Ids 27–29, 41–46, 113 (`category_name: Room`) are not in `RESIDENTIAL_PROPERTY_TYPE_IDS`, so the scraper never requests them; the ~6.1k rows in the DB arrived via API leakage and are not representative. Rooms are in scope by decision, so either add those ids to config for real coverage, or treat the existing Room rows as unreliable and analyze them separately. Do not mix them into whole-unit rent averages (Room avg RM546 vs RM2,335 for apartments).
+- **Run a full scrape to realise the new type coverage.** Ids 41–46 and 111–117 were added to config on 2026-07-19 but no scrape has run since — the DB's existing Room rows are still the old unrepresentative leakage sample. Until a full run completes, do not treat Room or the 111–117 house types as complete.
+- **Don't mix Room into whole-unit rent averages** (Room avg RM546 vs RM2,335 for apartments). Split on `category_id`.
 - **Drift canary:** if CPI `Other`'s average rent jumps well above ~RM2,900, a new non-residential category is leaking in — re-run the type-id probe.
 
 **Resolved:**
@@ -94,7 +95,23 @@ At the end of each session:
 
 ---
 
-## Last Session — 2026-07-19 (part 2)
+## Last Session — 2026-07-19 (part 3)
+
+Closed the type-coverage gap. `RESIDENTIAL_PROPERTY_TYPE_IDS` 17 → **29 types**, on branch `feat/room-house-type-coverage`.
+
+**Probe (ids 27–29, 44, 46, 113 targeted; 50–130 swept):**
+- **Room block is 41–46** — added all six. Id 44 is `Shoplot` (a room inside a shop lot) — residential, distinct from commercial id 22 `Shop lot`.
+- **Found a second gap: house block 111–117** (`Link Bungalow`, `Zero-Lot Bungalow`, `Cluster House`, `Terraced House`, `Twin Villas`, `3.5-storey Terraced House`). All `category_name: House`, all whole-unit residential, none previously in config. 116 and 118+ return nothing.
+- **27/28/29 (Sofo/Soho/Sovo) are Commercial Property, NOT residential** — they read as residential unit types. Deliberately excluded; a test now guards against re-adding them.
+- Id space is non-contiguous (1–19, 41–46, 111–117). Never assume a range.
+
+`mapping.csv` already covered every new type name — it was built for the full taxonomy; only config lagged. No mapping changes needed.
+
+**Cost:** a full scrape is now 16 states × 29 types = 464 base queries (was 272), ~70% more per-type requests.
+
+**Tests:** 74 passed, 4 skipped. Added an offline guard (no commercial ids in config) and a live drift test (`test_live_configured_types_are_residential`) that fails if Mudah reassigns an id into an excluded category — which would otherwise produce a scrape that looks fine but loads nothing. Live suite verified green against the real API.
+
+## Earlier — 2026-07-19 (part 2)
 
 Investigated the Kedah rent anomaly (previously deprioritized). Root cause: commercial listings, not a code bug. Fixed on branch `chore/exclude-commercial`.
 

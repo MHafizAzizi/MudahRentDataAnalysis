@@ -25,6 +25,8 @@ A single request returns up to 200 listings with structured attributes: `monthly
 
 **Depth cap:** the API returns an empty `data` array at offset ≥ ~9,984, no matter how many `total-results` it reports. To get full coverage of a large region, filter by `property_type_id` — each type has its own depth window. `iter_listings`/`scrape` accept `property_type_id`, and `scrape_all_types()` loops every residential type.
 
+**Type ids come in three non-contiguous blocks** (`config.RESIDENTIAL_PROPERTY_TYPE_IDS`, 29 types): `1–19` whole units, `41–46` room rentals, `111–117` houses. Don't assume the id space is contiguous or that names imply category — `27 Sofo`, `28 Soho`, `29 Sovo` read as residential but the API files them under Commercial Property, and `31 Residential` / `36 Mixed Development` are vacant Land. All three blocks were established by live probe; `category_name` is the only reliable discriminator.
+
 `scripts/mudah_api.py` wraps this:
 - `search(region, offset, property_type_id=None)` — one API call; retries 403/429/5xx with backoff + `Retry-After`
 - `iter_listings(region, max_pages, property_type_id=None)` — paginates, stops early on a partial page
